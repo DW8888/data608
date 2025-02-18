@@ -1,5 +1,5 @@
 ---
-title: "Data Story 1: Data analysis on Biden allocated IIJA funds based on political alignment, showing an equitable distribution across states regardless of party affiliation."
+title: "Data Story 1: Data analysis on Biden allocated IIJA funds based on political alignment, showing an non-equitable distribution across states  and no direct benefit to the Biden agenda."
 author: "Darwhin Gomez"
 format:
   html:
@@ -14,7 +14,7 @@ The Infrastructure Investment and Jobs Act (IIJA), enacted in 2021, allocates \$
 
 This analysis examines the distribution of IIJA funds across U.S. states and territories, assessing whether funding allocation aligns with political party support in the 2020 presidential election. By integrating electoral votes, population data, and funding amounts, the study evaluates fairness and trends in infrastructure investment.
 
-## Data Prep 
+## Data Prep
 
 The data preparation phase involves cleaning and standardizing datasets from multiple sources, including IIJA funding records, 2020 population counts, and presidential election results. Necessary transformations include fixing state name discrepancies, handling missing values, and merging datasets to enable meaningful comparisons.
 
@@ -27,7 +27,7 @@ To facilitate analysis, new features are created, such as political allegiance b
 
 The IIJA funding data is merged with electoral and population datasets to create a unified dataset for analysis. Ensuring correct state name matching and handling inconsistencies ensures accurate cross-referencing across sources.\
 \
-Code and procedures for this can be found in the reproducible report.
+Code and procedures for this can be found in the full reproducible report [Here](https://github.com/DW8888/data608/blob/main/data_story1.qmd).
 
 ```{r libraries_setup, include=FALSE}
 library(tidyverse)
@@ -210,7 +210,7 @@ ggplot(funding_summary, aes(x = Allegiance, y = total_funding, fill = Allegiance
   theme_minimal()
 ```
 
-## Plot 3 
+## Plot 3
 
 Total funding and population are plotted after a log transformation to better visualize their relationship, with a regression line fitted. The data shows a general increase in funding as population increases, but some of the most distant points from the regression line highlight deviations from the expected funding predicted by the model. Notably, several red states fall considerably above the regression line, indicating that these states are receiving higher funding than their population alone would predict.
 
@@ -281,4 +281,4 @@ ggplot(my_data, aes(x = log10(Total_Population/1000000), y = log10(funding_per_c
 
 ## Conclusion
 
-The analysis suggests that IIJA funding distribution is influenced by factors beyond political allegiance or total population, with smaller population red states often receiving higher per capita funding. Further data, such as state economic conditions and ongoing infrastructure projects, could provide more insight into what drives these allocations. However, it is clear that the funds allocated do not favor the political interests of the Biden administration.
+The analysis suggests that IIJA funding distribution is influenced by factors beyond political allegiance or total population, with smaller population red states often receiving higher per capita funding. Further data, such as state economic conditions and ongoing infrastructure projects, could provide more insight into what drives these allocations. However, it is clear that the funds allocated did not favor the political interests of the Biden administration.
