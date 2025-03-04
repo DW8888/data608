@@ -1,0 +1,349 @@
+---
+title: "Economic Indicators Analysis"
+author: "Darwhin Gomez"
+date: today
+format: 
+  revealjs:
+    center: true
+    max-scale: 2.0
+    slide-number: true
+    toc: false
+    theme: simple
+    transition: fade
+    incremental: true
+execute:
+  echo: false
+---
+
+```{r libraries_setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(feasts)
+library(writexl)
+theme_set(theme_minimal())  # Set minimal theme for all ggplots
+
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE, message = FALSE,
+                      fig.width = 16, fig.height = 9, include = FALSE )
+
+```
+
+## The Dual Mandate {.smaller}
+
+The Federal Reserve Bank of the United States([The Fed](https://www.federalreserve.gov/aboutthefed.htm)) has been entrusted by Congress with two mandates to regulate the country's economy. This dual mandate requires the Fed to control inflation and keep unemployment low. Since the Fed controls the Federal Funds Rate (the key interest rate it uses to influence other interest rates), it can influence when companies find it advantageous to take on debt and expand, leading to increased employment opportunities and a lower unemployment rate.
+
+At first glance, low unemployment means more people are participating in the economy, which often drives up consumer prices, contributing to inflation. The [Phillips Curve](https://en.wikipedia.org/wiki/Phillips_curve#) analyzes this relationship, describing it as an inverse correlation—when unemployment rises, inflation tends to decrease, and vice versa.
+
+------------------------------------------------------------------------
+
+## Data
+
+The Datas compose of three time series :\
+\
+
+-Rate as a percentage of total unemployed and looking for work from the workforce,
+
+-CPI on consumer goods
+
+-The FED Funds Rate (FRED) (Federal Reserve Board)
+
+------------------------------------------------------------------------
+
+```{r data_import, include=FALSE, echo=FALSE}
+fred<-read_excel("FEDFUNDS.xlsx",sheet = 2)
+ue<- read_excel("unemployment25y.xlsx",skip  = 11)
+cpi<-read_excel("cpit25y.xlsx",skip  = 11)
+
+
+
+
+
+
+ue <- ue |> 
+  pivot_longer(cols = -Year, names_to = "Month", values_to = "Unemployment_Rate") |> 
+  mutate(
+    Month = match(Month, month.abb),  # Convert month abbreviations to numeric values
+    Date = make_date(Year, Month, 1)  # Create Date column
+  ) |> 
+  select(Date, Unemployment_Rate) |> 
+  arrange(Date)
+
+
+
+# Separate the last two columns into a different dataframe
+cpi_half_data <- cpi |> select(Year, HALF1, HALF2) |> drop_na()
+
+# Remove the last two columns from the main dataframe
+cpi <- cpi |> select(-HALF1, -HALF2)
+
+# View the first few rows of both dataframes
+cpi<- cpi |> 
+  pivot_longer(cols = -Year, names_to = "Month", values_to = "Cpi_U") |> 
+  mutate(
+    Month = match(Month, month.abb),  # Convert month abbreviations to numeric values
+    Date = make_date(Year, Month, 1)  # Create Date column
+  ) |> 
+  select(Date, Cpi_U) |> 
+  arrange(Date)
+
+# renaming cols for constitancy for merging
+fred <- fred |> 
+  rename(Date = `observation_date`)  # Ensure column name matches exactly
+
+
+
+
+head(ue)
+head(cpi)
+head(fred)
+
+
+```
+
+```{r ts_prep, include=FALSE}
+
+# some minor tuch ups are needed before i can work this data
+# Perform full joins on Date column
+my_data <- full_join(fred, cpi, by = "Date") 
+my_data <- full_join(ue, my_data, by = "Date")
+my_data<-my_data|>
+  drop_na()
+
+# Rename column FEDFUNDS to Fed_Fund
+my_data <- my_data |> rename(Fed_Fund = FEDFUNDS)
+
+# Convert to tibble 
+my_data <- as_tibble(my_data)
+
+# View first few rows
+
+
+# Define key financial crises with dates
+crisis_events <- tibble(
+  Date = as.POSIXct(c("2000-03-10", "2008-09-15", "2020-03-01")), # Dot-Com Bubble, 2008 Crisis, COVID
+  label = c("00.Com", "08 FC", " Covid")
+)
+
+# Create a new data frame for the long format
+my_data_long <- as_tibble(my_data) %>%
+  pivot_longer(cols = c(Unemployment_Rate, Fed_Fund, Cpi_U),
+               names_to = "Metric",
+               values_to = "Value")
+
+# Ensure crisis labels are shown in all facets
+crisis_events <- crisis_events %>%
+  expand_grid(Metric = unique(my_data_long$Metric))
+
+# Find y-position for labels dynamically within each facet
+y_positions <- my_data_long %>%
+  group_by(Metric) %>%
+  summarise(y_max = max(Value, na.rm = TRUE) * 0.9)  # Place labels slightly below the max
+
+# Merge crisis_events with y_positions
+crisis_events <- crisis_events %>%
+  left_join(y_positions, by = "Metric")
+
+# Custom labels for each metric
+metric_labels <- c(
+  "Cpi_U" = "Urban Consumer PRice Index",
+  "Fed_Fund" = "FRed  Fund Rate",
+  "Unemployment_Rate" = "Unemployment Percentage"
+)
+
+
+
+# Define crisis text labels (appear only once in the top facet)
+crisis_events <- tibble(
+  Date = as.POSIXct(c("2001-03-01", "2008-09-15", "2020-03-01")), 
+  label = c("00.Com", "08 FC", "Covid"),
+  Metric = "Cpi_U"  # Text labels only in CPI facet
+)
+# Combine policy shading and recession periods into a single dataset
+policy_shading <- bind_rows(
+  tibble(
+    start = as.POSIXct(c("2001-01-01", "2007-08-01", "2020-03-01")),  # Dovish
+    end   = as.POSIXct(c("2004-06-01", "2015-12-01", "2022-03-01")),  # Hawkish
+    policy = "Dovish"
+  ),
+  tibble(
+    start = as.POSIXct(c("2004-06-01", "2015-12-01", "2022-03-01")),  # Hawkish
+    end   = as.POSIXct(c("2007-08-01", "2020-03-01", "2024-01-01")),  # Dovish
+    policy = "Hawkish"
+  ),
+  tibble(
+    start = as.POSIXct(c("2001-03-01", "2007-12-01", "2020-02-01")),
+    end   = as.POSIXct(c("2001-11-01", "2009-06-01", "2020-04-01")),
+    policy = "Recession"
+  )
+)
+
+
+my_data <- my_data %>%
+  arrange(Date) %>%
+  mutate(Inflation_Rate = (Cpi_U / lag(Cpi_U) - 1) * 100)
+
+write_xlsx(my_data, "my_data.xlsx")
+
+```
+
+```{r phillips_curve, include=FALSE}
+
+
+# HEy Prof I attempted doing this phillips curve with the cpi_u I didint quite get workign right i believe i was using the wrong metric. left here in case you would like to render it.
+ggplot(my_data, aes(x = Unemployment_Rate, y = Inflation_Rate)) +
+  geom_point(color = "blue", alpha = 0.6, size = 2) +
+  geom_smooth(method = "loess", color = "red", span = 0.75) +  # Loess smoothing
+  ggtitle("Phillips Curve: Unemployment vs. Inflation Rate") +
+  xlab("Unemployment Rate (%)") +
+  ylab("Inflation Rate (%)") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 20, face = "bold"),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16)
+  )
+
+
+
+
+```
+
+## Visualizing the last 25 years {.smaller}
+
+The Federal Reserve reacts to conditions in the economies to provide guidance and issue policies in order to persue its dual mandate from congress.
+
+-   The first is to maintain maximum employment.
+
+```{r plots_ts, include= TRUE,}
+# Plot Unemployment Rate over time
+
+ggplot(my_data, aes(x = Date, y = Unemployment_Rate)) +
+  geom_line(color = "blue", size = 1) +
+ 
+  
+  labs(title = "Unemployment Rate Over Time", x = "Year", y = "Unemployment Rate (%)") +
+  theme_minimal()+
+  theme(
+    plot.title = element_text(size = 24, face = "bold"),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 24)
+  )
+
+```
+
+------------------------------------------------------------------------
+
+## Visualizing the last 25 years {.smaller}
+
+The second is to control inflation, this does not mean stop inflation but to regulate it maintain it a expected rate usually between 1 and 2 %.
+
+-   Since 2020 the urban consumer price index has increased by 80 points
+
+-   From 2000- 2020 the index increased by \~ 90 points
+
+```{r plot_ts2, include= TRUE, }
+# Plot CPI over time
+ggplot(my_data, aes(x = Date, y = Cpi_U)) +
+  geom_line(color = "red", size = 1) +
+  
+  labs(title = "Consumer Price Index Urban (CPI-U) Over Time", x = "Year", y = "CPI Urban Index") +
+  theme_minimal()+
+  theme(
+    plot.title = element_text(size = 24, face = "bold"),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 24)
+  )
+```
+
+------------------------------------------------------------------------
+
+## Visualizing the last 25 years {.smaller}
+
+As these conditions change the reserve makes changes to its policies and guidance.
+
+```{r plot_ts3, include=TRUE, }
+# Plot Federal Funds Rate over time
+ggplot(my_data, aes(x = Date, y = Fed_Fund)) +
+  geom_line(color = "green", size = 1) +
+  labs(title = "Federal Funds Rate Over Time", x = "Year", y = "Federal Funds Rate (%)") +
+  theme_minimal()+
+  theme(
+    plot.title = element_text(size = 24, face = "bold"),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 24)
+  )
+```
+
+------------------------------------------------------------------------
+
+## Federal Reserve Policies Stance
+
+-   Dovish
+
+    The bank lowers FRED rates in attempt to intice industry and lower unemployment increase consumer spending.🕊️📈
+
+-   Hawkish
+
+    The bank raises FRED rate which contibrutes to lower spending, consumer pricing, and can lead to an increase in unemployment.🦅📉
+
+------------------------------------------------------------------------
+
+## Since 1999 {.smaller}
+
+```{r fianl_ima, include=TRUE, fig.width = 16}
+
+
+# Facet plot with economic policy highlights
+ggplot(my_data_long, aes(x = Date, y = Value, color = Metric, group = Metric)) +
+  
+  # Add policy shading (Hawkish, Dovish, Recession)
+  geom_rect(data = policy_shading, 
+            aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf, fill = policy),
+            inherit.aes = FALSE, alpha = 0.3) +
+
+  geom_line(size = 1) +
+  
+  facet_wrap(~Metric, scales = "free_y", ncol = 1, labeller = as_labeller(metric_labels)) +  
+  labs(title = "Time Series of Economic Indicators", x = "Year", y = NULL, fill = "Policy") +  
+  theme_minimal() +
+  theme(
+    legend.position = "right",  # Keep legend on right
+    legend.text = element_text(size = 18),  # Increase legend text size
+    legend.title = element_text(size = 20, face = "bold"),  # Increase legend title size
+    axis.text = element_text(size = 18),     
+    axis.title = element_text(size = 14),    
+    title = element_text(size = 28),
+    strip.text = element_text(size = 18, face = "bold")  # Bigger facet titles
+  ) +
+  scale_x_datetime(date_breaks = "2 years", date_labels = "%y") +  
+
+  # Define custom colors for Hawkish, Dovish, and Recession in legend
+  scale_fill_manual(values = c("Hawkish" = "lightblue", "Dovish" = "pink", "Recession" = "red")) +
+
+  # Remove Metric legend to reduce clutter
+  scale_color_manual(values = c("Cpi_U" = "red", "Fed_Fund" = "green", "Unemployment_Rate" = "blue"), guide = "none") +
+
+  # Add text labels but only for one facet (Cpi_U)
+  geom_text(data = crisis_events, aes(x = Date, y = Inf, label = label),
+            inherit.aes = FALSE, size = 6, color = "black", hjust = 0, vjust = 2)
+
+
+```
+
+-   The Federal Reserve has remained committed to stabilizing inflation and maximizing employment. This commitment is evident in its policies, particularly in the periods following recessions or economic crisis like the dot com bubble, the housing crisis and recently the covid pandemic.
+
+------------------------------------------------------------------------
+
+## Thank You!
+
+Economic Data
+
+<https://data.bls.gov/toppicks?survey=bls>
+
+Federal Reserve Data
+
+<https://fred.stlouisfed.org/series/FEDFUNDS>
+
+Darwhin Gomez
+
+[Github Repo](https://github.com/DW8888/data608/story2)

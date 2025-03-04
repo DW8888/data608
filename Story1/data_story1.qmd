@@ -51,7 +51,7 @@ iija_funding|>
 # Calculate the total IIJA funds distributed
 total_iija_fund_distributed2023 <- sum(iija_funding$funding_in_billions, na.rm = TRUE)
 
-# Print the total distributed funds
+# Print the total distributed f  unds
 print(total_iija_fund_distributed2023)
 ```
 
