@@ -1,5 +1,5 @@
 ---
-title: "Economic Indicators Analysis"
+title: "The Dual Mandate of the Federal Reserve"
 author: "Darwhin Gomez"
 date: today
 format: 
