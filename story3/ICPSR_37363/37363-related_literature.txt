@@ -1,0 +1,55 @@
+Bibliography
+State Firearm Law Database: State Firearm Laws, 1991-2019
+
+This bibliography includes published and unpublished works that are related 
+to ICPSR study 37363. It includes works that are based on primary
+or secondary analysis of the data, or which describe or critique those
+data or the collection methodology. 
+
+If you publish a work or know of other works that are based on these data,
+please send the complete citation and name of the ICPSR study used to:
+icpsr-biblio-notify@umich.edu 
+
+
+1. Fridel, Emma E., "Comparing the impact of household gun ownership and
+concealed carry legislation on the frequency of mass shootings and firearms
+homicide." Justice Quarterly. in press 2021,. DOI:
+10.1080/07418825.2020.1789693
+
+2. Liu, Ye; Siegel, Michael; Sen, Bisakha, "Association of state-level
+firearm-related deaths with firearm laws in neighboring states." JAMA
+Network Open. 2022, 5, (11),. DOI: 10.1001/jamanetworkopen.2022.40750
+
+3. McClenathan, Jane; Pahn, Molly; Siegel, Michael, "The Changing Landscape
+of U.S. Gun Policy: State Firearm Laws, 1991-2016." Michael Siegel, 2017?.
+Full text PDF: http://statefirearmlaws.org/sites/default/files/2017-12/report_0.pdf
+
+4. Pelletier, Karissa R., "An Examination Into the Covariates Surrounding
+Children and Teen Firearm Homicide Victimization." Dissertation, Arizona
+State University, 2021.
+Full text PDF: http://statefirearmlaws.org/sites/default/files/2017-12/report_0.pdf
+
+5. Sabbath, Erika L.; Hawkins, Summer; Baum, Christopher F., "State-level
+changes in firearm laws and workplace homicide rates: United States, 2011
+to 2017." American Journal of Public Health. Feb 2020, 110, (2), 230 - 236.
+DOI: 10.2105/AJPH.2019.305405
+Full text PDF: http://statefirearmlaws.org/sites/default/files/2017-12/report_0.pdf
+
+6. Scantling, Dane; Hynes, Allyson; Kaufman, Elinore; Byrne, James; Holena,
+Daniel N.; Seamon, Mark J., "Bang for the buck: The impact of political
+financial contributions on firearm law." Journal of Trauma and Acute Care
+Surgery. Jul 2021, 91, (1), 54 - 63. DOI: 10.1097/TA.0000000000003117
+Full text PDF: http://statefirearmlaws.org/sites/default/files/2017-12/report_0.pdf
+
+7. Siegel, Michael; Goder-Reiser, Max; Duwe, Grant; Rocque, Michael; Fox,
+James A.; Fridel, Emma E., "The relation between state gun laws and the
+incidence and severity of mass public shootings in the United States, 1976-
+2018." Law and Human Behavior. 2020, 44, (5), 347 - 360. DOI:
+10.1037/lhb0000378
+Full text PDF: http://statefirearmlaws.org/sites/default/files/2017-12/report_0.pdf
+
+8. Zhai, Muxin; Kishan, Ruby P.; Showalter, Dean, "Social capital and
+suicidal behaviors: Evidence from the United States counties." Journal of
+Behavioral and Experimental Economics. Jun 2022, 98,. DOI:
+10.1016/j.socec.2022.101856 2016-MU-MU-0047
+Full text PDF: http://statefirearmlaws.org/sites/default/files/2017-12/report_0.pdf

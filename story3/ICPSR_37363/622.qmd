@@ -1,0 +1,702 @@
+---
+title: "Bank Maketing Model Experimentation"
+author: "Darwhin Gomez"
+date: today
+format:
+  html:
+    code-fold: true
+    toc: true
+editor: visual
+---
+
+```{r libs, include=FALSE}
+# This Code BLock Load our libraries and some besic knitr publishing optoons
+
+library(tidyverse)
+library(readxl)
+library(corrplot)
+library(skimr)
+library(readr)
+library(e1071)
+library(knitr)
+library(kableExtra)
+library(caret)
+library(randomForest)
+library(adabag)
+library(rpart)
+library(pROC)
+library(rpart.plot)
+library(reprtree)
+library(party)
+library(partykit)
+library(smotefamily)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+
+```
+
+```{r structure}
+#Loading the data, viewing the srtucture
+bank_data<-readRDS("data/bank_full.rds")
+str(bank_data)
+```
+
+## Experimentation and Modeling
+
+This report builds upon the previous analysis of the bank-additional-full dataset explored in Project One. The objective of this project is to experiment with classification models, specifically Decision Trees, Random Forest, and AdaBoost.
+
+To achieve this, I will first establish baseline runs for each model and then conduct experiments to understand how changes in model parameters, feature selection, and cross-validation impact performance. The models will be evaluated using precision, recall, F1-score, and AUC-ROC to compare their effectiveness. Based on these experiments, I will recommend the most suitable model for classification.
+
+### Applying Recommendations from Project One:
+
+-   Transforming `pdays` into a binary factor indicating whether the client was previously contacted.
+
+-   Removing irrelevant features: `emp.var.rate`, `previous`, and `duration`.
+
+```{r}
+# pdays making  binary factor 0 not previuously contactated - 1 has been contacted
+bank_data$pdays <- factor(ifelse(bank_data$pdays == 999, 0, 1))
+# Remove unwanted features (previous contact count, employment variation rate, and duration)
+bank_data <- bank_data |> 
+  select(-previous, -emp.var.rate, -duration)
+
+# Display structure of the modified dataset
+str(bank_data)
+```
+
+```{r partion, include=FALSE}
+# Setting seed for reproducibility
+set.seed(987)
+# 80 20 split on y
+
+trainIndex <- createDataPartition(bank_data$y, p = 0.75, list = FALSE)
+# training data 75%
+
+trainData <- bank_data[trainIndex, ]
+# testing data
+testData <- bank_data[-trainIndex, ]
+# cheching lables
+table(trainData$y)
+prop.table(table(trainData$y))
+
+
+
+
+x <- trainData[, setdiff(names(trainData), c("y", "y_bin"))]
+y <- ifelse(trainData$y == "yes", 1, 0)
+
+# One-hot encode categorical features
+x_encoded <- model.matrix(~ . - 1, data = x)  # -1 removes intercept
+
+# Combine x and y into a single matrix/data frame
+train_input <- data.frame(x_encoded)
+
+train_input$y <- y  # numeric 0/1 target
+x_test_encoded <- model.matrix(~ . - 1, data = testData[, setdiff(names(testData), "y")])
+x_test_encoded <- as.data.frame(x_test_encoded)
+x_test_encoded$y <- testData$y  # reattach target for evaluation
+
+# Apply SMOTE
+smote_out <- SMOTE(X = train_input[, -ncol(train_input)],  # all predictors
+                   target = train_input$y,
+                   K = 5,
+                   dup_size =6)
+
+# Retrieve the SMOTE dataset
+trainData_smote <- smote_out$data
+
+# Convert the binary class label back to factor
+trainData_smote$y <- factor(ifelse(trainData_smote$class == 1, "yes", "no"))
+
+# Remove extra class column
+trainData_smote$class <- NULL
+table(trainData_smote$y)
+prop.table(table(trainData_smote$y))
+```
+
+```{r}
+# Get names of encoded predictors from SMOTE training data
+train_features <- setdiff(names(trainData_smote), "y")
+
+# One-hot encode the test data
+x_test_encoded <- model.matrix(~ . -1, data = testData[, setdiff(names(testData), "y")])
+x_test_encoded <- as.data.frame(x_test_encoded)
+
+# Add any missing columns that exist in training but not test
+missing_cols <- setdiff(train_features, names(x_test_encoded))
+for (col in missing_cols) {
+  x_test_encoded[[col]] <- 0  # Add as zeros
+}
+
+# Make sure columns are in the same order as training
+x_test_encoded <- x_test_encoded[, train_features]
+
+# Add back test labels if needed
+x_test_encoded$y <- testData$y
+
+```
+
+```{r results, include= FALSE}
+# creating a DF for result to compare models later
+results <- data.frame(Model = character(), 
+                      Experiment = integer(), 
+                      Accuracy = numeric(), 
+                      Precision = numeric(), 
+                      Recall = numeric(), 
+                      F1 = numeric(), 
+                      AUC = numeric(), 
+                      stringsAsFactors = FALSE)
+# roc list
+roc_list <- list()
+
+```
+
+## Baseline Models
+
+Baseline models are plotted on original data set, for baseline comparison
+
+::: panel-tabset
+## CART Base
+
+```{r}
+
+
+
+tree_base<- rpart(y ~ . , data = trainData , method = "class", )
+
+# Make predictions
+tree_base_pred <- predict(tree_base, testData, type = "class")
+tree_base_prob <- predict(tree_base, testData, type = "prob")[,2] 
+tree_base_conf <- confusionMatrix(tree_base_pred, testData$y)
+tree_base_auc <- auc(testData$y, tree_base_prob)
+
+# Store results
+results <- rbind(results, data.frame(Model = "Decision Tree", Experiment = 0, 
+                      Accuracy =tree_base_conf$overall["Accuracy"],                                   Precision = tree_base_conf$byClass["Precision"],
+                      Recall = tree_base_conf$byClass["Recall"],
+                     F1 = tree_base_conf$byClass["F1"],
+                                     AUC = tree_base_auc))
+#plot the tree
+rpart.plot(tree_base, main = "Decision Tree", cex = .65)
+plotcp(tree_base)
+summary(tree_base)
+tree_base_conf
+
+```
+
+## RandomForrest Base
+
+```{r rfbase,cache=TRUE}
+rf_base_model <- randomForest(y ~ ., data = trainData, ntree = 50)
+rf_base_pred <- predict(rf_base_model, testData)
+rf_base_prob <- predict(rf_base_model, testData, type = "prob")[,2]  # Probability for ROC
+
+# Evaluate Random Forest
+rf_base_conf <- confusionMatrix(rf_base_pred, testData$y)
+rf_base_auc<- auc(testData$y, rf_base_prob)
+
+
+# Store results
+results <- rbind(results, data.frame(Model = "Random Forest", Experiment = 0, 
+                           Accuracy = rf_base_conf$overall["Accuracy"],
+                               Precision = rf_base_conf$byClass["Precision"],
+                                     Recall = rf_base_conf$byClass["Recall"],
+                                     F1 = rf_base_conf$byClass["F1"],
+                                     AUC = rf_base_auc))
+varImpPlot(rf_base_model, sort = TRUE,n.var = 10, main = "Ten most important variables in base RF Model")
+
+summary(rf_base_model)
+rf_base_conf
+
+
+```
+
+## AdaBoost Base
+
+```{r adabase,cache=TRUE}
+# Baseline Model 3: Adaboost (Default) 50 week learners
+ab_base_model <- boosting(y ~ ., data = trainData, boos = TRUE, mfinal = 50)
+
+# Make predictions
+ab_base_pred <- predict(ab_base_model, testData)
+ab_base_prob <- ab_base_pred$prob[,2]  # Probability for ROC
+
+# Ensure predicted class levels match actual class levels
+ab_base_pred$class <- factor(ab_base_pred$class, levels = levels(testData$y))
+
+# Evaluate Adaboost model
+ab_base_conf <- confusionMatrix(ab_base_pred$class, testData$y)
+ab_base_auc <- auc(testData$y, ab_base_prob)
+# printing the cofusion matrix
+print(ab_base_conf)
+
+# Store results
+results <- rbind(results, data.frame(Model = "Adaboost", Experiment = 0, 
+                              Accuracy =  ab_base_conf$overall["Accuracy"],
+                              Precision = ab_base_conf$byClass["Precision"],
+                              Recall =    ab_base_conf$byClass["Recall"],
+                              F1 = ab_base_conf$byClass["F1"],
+                              AUC = ab_base_auc))
+```
+:::
+
+```{r Baseline_ Results}
+rownames(results) <- NULL
+print(results)
+```
+
+Evaluation Metrics:
+
+Accuracy The percentage of total predictions that were correct—both "yes" (subscribed) and "no" (not subscribed).
+
+Precision Out of all the times the model predicted someone would subscribe to a term deposit ("yes"), how many actually did.
+
+Recall Out of all the people who actually subscribed, how many the model correctly predicted as "yes".
+
+F1 Score A balanced score that combines both precision and recall—useful when you want to weigh both equally.
+
+AUC Stands for "Area Under the Curve." It measures how well the model can distinguish between those who subscribed and those who didn’t. The closer it is to 1, the better the model is at separating the two groups.
+
+ROC Stands for "Receiver Operating Characteristic" curve. It's a graph that shows how the model’s true positive rate and false positive rate change at different classification thresholds.
+
+## Bussiness Case
+
+Cases: 41188 only \~11% subsrucribed
+
+Since the dataset is highly imbalanced—about 88% of the cases are “no” and only 11% are “yes”—accuracy alone isn’t a reliable measure. A model could predict “no” for everyone and still look 89% accurate. From a business standpoint, it’s more important to avoid falsely labeling someone as a subscriber when they’re not, since that would waste valuable marketing resources on people who aren’t likely to subscribe. Because of that, I decided to prioritize precision over recall. Precision helps ensure that when the model does predict “yes,” it’s more likely to be correct—so the marketing effort is better targeted and more efficient.
+
+## Experiments
+
+All experiments are compared to the values in the original or (base models) in the Results data frame shown above.
+
+**Decision Tree (CART)**
+
+**H1:** Increasing the tree depth (`maxdepth = 10`) and allowing fine splits (`minsplit = 2`, `minbucket = 100`) will improve precision by enabling the model to capture more specific patterns associated with positive cases.
+
+**H2:** Limiting the tree depth (`maxdepth = 5`) while keeping `minsplit = 2` and `minbucket = 100` will increase recall by generalizing to capture more "yes" cases, but it may reduce precision due to an increase in false positives.
+
+**H3:** Applying SMOTE to balance the training set will improve the model’s ability to learn from the minority class. This is expected to lead to higher accuracy and precision, particularly by reducing false positives and making the model more selective when predicting “yes.”
+
+**Random Forest** -
+
+**H4:** Increasing the number of trees (`ntree = 1000`) will improve precision by stabilizing predictions and reducing variance.
+
+**H5:** Reducing the number of predictors considered at each split (`mtry = √p`) will reduce overfitting and improve precision by limiting the impact of noisy or irrelevant features.
+
+**H6:** Training the model on a SMOTE-balanced dataset is expected to improve precision by exposing the model to a more balanced distribution, allowing it to better distinguish true positives.
+
+**AdaBoost**
+
+-   **H7:** Increasing the number of boosting iterations (`mfinal`) = 150 will improve recall by allowing the model to focus more effectively on hard-to-classify “yes” cases.
+
+-   **H8:** Limiting the depth of base learners will improve precision by preventing overfitting, especially on minority class examples. STUMPS
+
+-   **H9:** Training AdaBoost on a SMOTE-balanced, one-hot encoded dataset is expected to improve both precision and accuracy by helping the model better learn patterns in the minority class and reduce false positives.
+
+:::::: panel-tabset
+## CART Decision Tree Experiment 1
+
+```{r cart_e1,cache=TRUE
+# Experiment 1: Decision Tree with maxdepth = 10, minsplit = 2,minbucket=50 
+# Hypothesis: This will increase precision over the baseline
+
+control_params <- rpart.control(minsplit = 2,   
+                              
+                                minbucket = 50,  
+                              
+                                cp = 0,     
+                               
+                                maxdepth =10)   
+# Set max depth (adjust as needed)
+tree_e1<- rpart(y ~ . , data = trainData , method = "class", control = control_params)
+
+# Make predictions
+tree_e1_pred <- predict(tree_e1, testData, type = "class")
+tree_e1_prob <- predict(tree_e1, testData, type = "prob")[,2] 
+tree_e1_conf <- confusionMatrix(tree_e1_pred, testData$y)
+tree_e1_auc <- auc(testData$y, tree_e1_prob)
+
+# Store results
+results <- rbind(results, data.frame(Model = "Decision Tree MaxDepth 10", Experiment = 1, 
+                      Accuracy =tree_e1_conf$overall["Accuracy"],                                   Precision = tree_e1_conf$byClass["Precision"],
+                      Recall = tree_e1_conf$byClass["Recall"],
+                     F1 = tree_e1_conf$byClass["F1"],
+                                     AUC = tree_e1_auc))
+#plot the tree
+#rpart.plot(tree_e1, main = "Decision Tree experiment 1", cex = .55)
+plotcp(tree_e1)
+summary(tree_e1)
+
+```
+
+## CART Decision Tree Experiment 2
+
+```{r de1,cache=TRUE}
+## # Experiment 1: Decision Tree with maxdepth = 5, minsplit = 2,minbucket= 50
+# Hypothesis: This will increase precision over the baseline
+control_params2 <- rpart.control(minsplit = 2,   
+                              
+                                minbucket = 100,  
+                              
+                                cp = 0,     
+                               
+                                maxdepth =5)   
+# Set max depth (adjust as needed)
+tree_e2<- rpart(y ~ . , data = trainData , method = "class", control = control_params2)
+
+# Make predictions
+tree_e2_pred <- predict(tree_e2, testData, type = "class")
+tree_e2_prob <- predict(tree_e2, testData, type = "prob")[,2] 
+tree_e2_conf <- confusionMatrix(tree_e2_pred, testData$y)
+tree_e2_auc <- auc(testData$y,  tree_e2_prob)
+
+# Store results
+results <- rbind(results, data.frame(Model = "Decision Tree MaxDepth 5", Experiment = 2, 
+                      Accuracy =tree_e2_conf$overall["Accuracy"],                                   Precision = tree_e2_conf$byClass["Precision"],
+                      Recall = tree_e2_conf$byClass["Recall"],
+                     F1 = tree_e2_conf$byClass["F1"],
+                                     AUC = tree_e2_auc))
+#plot the tree
+rpart.plot(tree_e2, main = "Decision Tree Expeiment 2", cex = .55)
+plotcp(tree_e2)
+summary(tree_e2)
+
+
+```
+
+::: panel-tabset
+## CART Decision Tree Experiment 3
+
+```{r dte3,cache=TRUE}
+## Experiment 3: Decision Tree with maxdepth = 5, minsplit = 2, minbucket = 100 (SMOTE)
+# Hypothesis (H3): Using SMOTE to balance the training set will improve precision and accuracy by giving the model better representation of the minority class.
+
+control_params3 <- rpart.control(minsplit = 2,   
+                                 minbucket = 100,  
+                                 cp = 0,     
+                                 maxdepth = 5)
+
+# Train decision tree on SMOTE-balanced training data
+tree_e3 <- rpart(y ~ ., data = trainData_smote, method = "class", control = control_params3)
+
+# Make predictions on original test set
+tree_e3_pred <- predict(tree_e3, newdata = x_test_encoded, type = "class")
+tree_e3_prob <- predict(tree_e3, newdata = x_test_encoded, type = "prob")[,2]
+
+tree_e3_conf <- confusionMatrix(tree_e3_pred, testData$y)
+tree_e3_auc <- auc(testData$y, tree_e3_prob)
+
+# Store results
+results <- rbind(results, data.frame(Model = "Decision Tree SMOTE MaxDepth 5", Experiment = 3, 
+                      Accuracy = tree_e3_conf$overall["Accuracy"],
+                      Precision = tree_e3_conf$byClass["Precision"],
+                      Recall = tree_e3_conf$byClass["Recall"],
+                      F1 = tree_e3_conf$byClass["F1"],
+                      AUC = tree_e3_auc))
+
+# Plot the tree
+rpart.plot(tree_e3, main = "Decision Tree - Experiment 3 (SMOTE)", cex = .55)
+plotcp(tree_e3)
+summary(tree_e3)
+
+
+tree_e3_conf
+```
+:::
+
+## Random Forest Experiment 1
+
+```{r rf_experiment1,cache=TRUE}
+# Random Forest Experiment 1 increasing ntrees to 1000
+rf_1000 <- randomForest(y ~ ., data = trainData, ntree = 1000)
+rf_1000_predict <- predict(rf_1000, testData)
+rf_1000_prob <- predict(rf_1000, testData, type = "prob")[,2]  
+
+# Evaluate Random Forest
+rf_1000_conf <- confusionMatrix(rf_1000_predict, testData$y)
+rf_1000_auc<- auc(testData$y, rf_1000_prob)
+
+
+# Store results
+results <- rbind(results, data.frame(Model = "Random Forest N 1000", Experiment = 1, 
+                           Accuracy = rf_1000_conf$overall["Accuracy"],
+                               Precision = rf_1000_conf$byClass["Precision"],
+                                     Recall = rf_1000_conf$byClass["Recall"],
+                                     F1 = rf_1000_conf$byClass["F1"],
+                                     AUC = rf_1000_auc))
+varImpPlot(rf_1000, sort = TRUE,n.var = 10, main = "Ten most important variables in  RF Model 1000")
+
+summary(rf_1000)
+```
+
+## Random Forest Experiment 2
+
+```{r rf_experiment2, cache=TRUE}
+# Calculate sqrt of total features
+
+p <- ncol(trainData) - 1  # Excluding target variable
+mtry_val <- floor(sqrt(p))  # Taking floor to ensure an integer
+
+# Random Forest Experiment 2 - Reducing mtry to sqrt(p)
+
+rf_sqrt_mtry <- randomForest(y ~ ., data = trainData, ntree = 1000,mtry = mtry_val)
+rf_sqrt_mtry_predict <- predict(rf_sqrt_mtry, testData)
+rf_sqrt_mtry_prob <- predict(rf_sqrt_mtry, testData, type = "prob")[,2]  
+
+# Evaluate Random Forest
+rf_sqrt_mtry_conf <- confusionMatrix(rf_sqrt_mtry_predict, testData$y)
+rf_sqrt_mtry_auc <- auc(testData$y, rf_sqrt_mtry_prob)
+
+# Store results
+results <- rbind(results, data.frame(Model = "Random Forest mtry=sqrt(p)) N 1000", Experiment = 2, 
+                           Accuracy = rf_sqrt_mtry_conf$overall["Accuracy"],
+                               Precision = rf_sqrt_mtry_conf$byClass["Precision"],
+                                     Recall = rf_sqrt_mtry_conf$byClass["Recall"],
+                                     F1 = rf_sqrt_mtry_conf$byClass["F1"],
+                                     AUC = rf_sqrt_mtry_auc))
+
+# Feature Importance Plot
+varImpPlot(rf_sqrt_mtry, sort = TRUE, n.var = 10, main = "Top 10 Features (RF with mtry=sqrt(p))")
+
+# Summary of the Random Forest Model
+summary(rf_sqrt_mtry)
+rf_sqrt_mtry
+
+
+
+```
+
+::: panel-tabset
+## Random Forest Experiment 3
+
+```{r rf_experiment3,cache=TRUE}
+# H6: Random Forest trained on SMOTE-balanced dataset
+
+
+
+# Train Random Forest on SMOTE data
+rf_smote_h6 <- randomForest(y ~ ., data = trainData_smote, ntree = 1000, mtry = mtry_val)
+
+# Predict on original test set
+rf_smote_h6_pred <- predict(rf_smote_h6, x_test_encoded)
+rf_smote_h6_prob <- predict(rf_smote_h6, x_test_encoded, type = "prob")[, 2]
+
+
+# Evaluate performance
+rf_smote_h6_conf <- confusionMatrix(rf_smote_h6_pred, testData$y)
+rf_smote_h6_auc <- auc(testData$y, rf_smote_h6_prob)
+
+# Store results
+results <- rbind(results, data.frame(Model = "Random Forest SMOTE, mtry=sqrt(p) N 1000", Experiment = 3, 
+                                     Accuracy = rf_smote_h6_conf$overall["Accuracy"],
+                                     Precision = rf_smote_h6_conf$byClass["Precision"],
+                                     Recall = rf_smote_h6_conf$byClass["Recall"],
+                                     F1 = rf_smote_h6_conf$byClass["F1"],
+                                     AUC = rf_smote_h6_auc))
+
+
+rf_smote_h6
+
+
+
+```
+:::
+
+## AdaBoost Experiment 1
+
+```{r adaboost1,cache=TRUE}
+ab_control <- rpart.control(maxdepth = 5   )
+
+ab_exp_h5 <- boosting(y ~ ., 
+                      data = trainData, 
+                      boos = TRUE, 
+                      mfinal = 150,
+                      )
+
+# Make predictions
+ab_exp_h5_pred <- predict(ab_exp_h5, testData)
+ab_exp_h5_prob <- ab_exp_h5_pred$prob[,2]
+
+# Ensure factor levels match
+ab_exp_h5_pred$class <- factor(ab_exp_h5_pred$class, levels = levels(testData$y))
+
+# Evaluate performance
+ab_exp_h5_conf <- confusionMatrix(ab_exp_h5_pred$class, testData$y)
+ab_exp_h5_auc <- auc(testData$y, ab_exp_h5_prob)
+
+# Store results
+results <- rbind(results, data.frame(Model = "AdaBoost  Mfinal 150 ", Experiment = 1,
+                                     Accuracy = ab_exp_h5_conf$overall["Accuracy"],
+                                     Precision = ab_exp_h5_conf$byClass["Precision"],
+                                     Recall = ab_exp_h5_conf$byClass["Recall"],
+                                     F1 = ab_exp_h5_conf$byClass["F1"],
+                                     AUC = ab_exp_h5_auc))
+
+# Reset row names
+
+ab_exp_h5_conf
+```
+
+## AdaBoost Experiment 2
+
+```{r adaboost_experiment2, cache=TRUE}
+# Experiment: AdaBoost with shallow base learners (maxdepth = 5)
+ab_control <- rpart.control(maxdepth = 5)
+
+ab_exp_h6 <- boosting(y ~ ., 
+                      data = trainData, 
+                      boos = TRUE, 
+                      mfinal = 50,
+                      control = ab_control)
+
+# Make predictions
+ab_exp_h6_pred <- predict(ab_exp_h6, testData)
+ab_exp_h6_prob <- ab_exp_h6_pred$prob[,2]
+
+# Ensure factor levels match
+ab_exp_h6_pred$class <- factor(ab_exp_h6_pred$class, levels = levels(testData$y))
+
+# Evaluate performance
+ab_exp_h6_conf <- confusionMatrix(ab_exp_h6_pred$class, testData$y)
+ab_exp_h6_auc <- auc(testData$y, ab_exp_h6_prob)
+
+# Store results
+results <- rbind(results, data.frame(Model = "AdaBoost (maxdepth = 5), Mfinal 50", Experiment = 2,
+                                     Accuracy = ab_exp_h6_conf$overall["Accuracy"],
+                                     Precision = ab_exp_h6_conf$byClass["Precision"],
+                                     Recall = ab_exp_h6_conf$byClass["Recall"],
+                                     F1 = ab_exp_h6_conf$byClass["F1"],
+                                     AUC = ab_exp_h6_auc))
+
+
+ab_exp_h6_conf
+
+```
+
+::: panel-tabset
+## AdaBoost Experiment 3
+
+```{r adaboost_experiment3, cache=TRUE}
+
+# AdaBoost Experiment 3: SMOTE-balanced, one-hot encoded data
+# H9: This setup is expected improve precision 
+
+
+ab_control_h9 <- rpart.control(maxdepth = 5)
+
+# Train AdaBoost on SMOTE + encoded training data
+ab_exp_h9 <- boosting(y ~ ., 
+                      data = trainData_smote, 
+                      boos = TRUE, 
+                      mfinal = 50,
+                      control = ab_control_h9)
+
+# Predict on encoded test set
+ab_exp_h9_pred <- predict(ab_exp_h9, x_test_encoded)
+ab_exp_h9_prob <- ab_exp_h9_pred$prob[, 2]
+
+# Ensure levels match
+ab_exp_h9_pred$class <- factor(ab_exp_h9_pred$class, levels = levels(testData$y))
+
+# Evaluate performance
+ab_exp_h9_conf <- confusionMatrix(ab_exp_h9_pred$class, testData$y)
+ab_exp_h9_auc <- auc(testData$y, ab_exp_h9_prob)
+
+# Store results
+results <- rbind(results, data.frame(Model = "AdaBoost SMOTE Mfinal 50 MAxDepth 5", Experiment = 3,
+                                     Accuracy = ab_exp_h9_conf$overall["Accuracy"],
+                                     Precision = ab_exp_h9_conf$byClass["Precision"],
+                                     Recall = ab_exp_h9_conf$byClass["Recall"],
+                                     F1 = ab_exp_h9_conf$byClass["F1"],
+                                     AUC = ab_exp_h9_auc))
+
+
+
+summary(ab_exp_h9)
+
+
+```
+:::
+
+
+## Results
+
+::: panel-tabset
+## Results sorted by Precision
+
+```{r}
+
+# Reseting the index col
+
+rownames(results) <- NULL
+
+results$AUC <- as.numeric(results$AUC)
+
+# Then reshape
+results_long <- results %>%
+  pivot_longer(cols = c("Precision", "AUC"), 
+               names_to = "Metric", 
+               values_to = "Value")
+```
+
+## Precision, AUC Plot, 
+
+```{r}
+
+# Reshape just Precision and AUC to long format
+results_long <- results %>%
+  select(Model, Precision, AUC) %>%
+  pivot_longer(cols = c("Precision", "AUC"), 
+               names_to = "Metric", values_to = "Value")
+
+#plot
+ggplot(results_long, aes(x = Value, y = reorder(Model, Value), color = Metric)) +
+  geom_point(size = 4) +
+  labs(title = "Precision vs AUC by Model",
+       x = "Score", y = "Model", color = "Metric") +
+  theme_minimal()
+
+
+```
+
+
+
+```{r}
+# Feature importance plot for random forest smote
+varImpPlot(rf_smote_h6, sort = TRUE, n.var = 10, main = "Top 10 Features (RF SMOTE)")
+# Feature importance plot for adaboost 150
+importance_ab6 <- as.data.frame(ab_exp_h6$importance)
+importance_ab6$Variable <- rownames(importance_ab6)
+colnames(importance_ab6)[1] <- "Importance"
+
+# Sort and plot
+importance_ab6 %>%
+  arrange(desc(Importance)) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = "#0073C2FF") +
+  coord_flip() +
+  labs(title = "Top 10 Important Variables (AdaBoost H6)",
+       x = "Variable",
+       y = "Importance") +
+  theme_minimal()
+```
+:::
+
+**Summary:**
+
+Summary of Results:\
+The objective of all experiments was to increase precision compared to each model’s baseline. The highest precision was achieved by the Decision Tree with max depth 5, trained on a SMOTE-balanced dataset, as proposed in Hypothesis 3 (H3). This model reached a precision score of 0.9398, but with trade-offs in recall (0.9076), F1 score (0.9234), and AUC (0.7347) — raising concerns about its balance and overall generalization.
+
+In support of Hypothesis 9 (H9), the AdaBoost model trained on a SMOTE-balanced, one-hot encoded dataset showed strong improvement in precision and general performance. However, the Random Forest model trained on SMOTE data with tuned parameters proved to be the most well-rounded. This model delivered high precision (0.9236), high F1 (0.9432), and a strong AUC (0.7882) — aligning well with the business objective of improving precision while maintaining strong overall performance. The most importance features in this model were social economic indicators, specifically `euribor3m` and `nm.employed.`
+
+During model experimentation, it should be noted that the boosting methods used in AdaBoost introduced considerable compute time, especially as `maxdepth` was decreased and `mfinal` increased. These computational costs should be factored in when selecting a model for business deployment, particularly in environments where scalability and efficiency are critical.
+
+## Conclusion
+
+**Final Recommendation:**\
+
+Ultimately, I would recommend integrating a class imbalance solution, such as SMOTE, and adopting an ensemble-based modeling approach to address this business case effectively. The Random Forest model, when combined with SMOTE, demonstrated strong performance and is particularly promising. It is worth further exploration and tuning to achieve even higher predictive power while maintaining the precision necessary to minimize false positives in a business context.
+
+Finally, it is evident that macroeconomic factors such as `euribor3m` and `nr.employed` play a significant role in predicting whether a client is likely to subscribe to a long-term deposit. These insights could inform more targeted and data-driven marketing strategies.

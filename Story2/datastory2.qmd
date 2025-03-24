@@ -38,14 +38,14 @@ At first glance, low unemployment means more people are participating in the eco
 
 ## Data
 
-The Datas compose of three time series :\
+The Data is composed of three time series :\
 \
 
--Rate as a percentage of total unemployed and looking for work from the workforce,
+-   Unemployment Rate as a percentage of total unemployed and looking for work from the workforce,
 
--CPI on consumer goods
+-   Consumer Price Index Urban
 
--The FED Funds Rate (FRED) (Federal Reserve Board)
+-   The FED Funds Rate (FRED) (Federal Reserve Board)
 
 ------------------------------------------------------------------------
 
@@ -115,7 +115,7 @@ my_data <- my_data |> rename(Fed_Fund = FEDFUNDS)
 # Convert to tibble 
 my_data <- as_tibble(my_data)
 
-# View first few rows
+
 
 
 # Define key financial crises with dates
@@ -210,7 +210,7 @@ ggplot(my_data, aes(x = Unemployment_Rate, y = Inflation_Rate)) +
 
 ## Visualizing the last 25 years {.smaller}
 
-The Federal Reserve reacts to conditions in the economies to provide guidance and issue policies in order to persue its dual mandate from congress.
+The Federal Reserve reacts to conditions in the economies to provide guidance and issue policies in order to pursue its dual mandate from congress.
 
 -   The first is to maintain maximum employment.
 
@@ -237,7 +237,7 @@ ggplot(my_data, aes(x = Date, y = Unemployment_Rate)) +
 
 The second is to control inflation, this does not mean stop inflation but to regulate it maintain it a expected rate usually between 1 and 2 %.
 
--   Since 2020 the urban consumer price index has increased by 80 points
+-   Since 2020 the urban consumer price index has increased by \~ 80 points
 
 -   From 2000- 2020 the index increased by \~ 90 points
 
@@ -259,7 +259,7 @@ ggplot(my_data, aes(x = Date, y = Cpi_U)) +
 
 ## Visualizing the last 25 years {.smaller}
 
-As these conditions change the reserve makes changes to its policies and guidance.
+As these conditions change the Federal Reserve makes changes to its policies and guidance.
 
 ```{r plot_ts3, include=TRUE, }
 # Plot Federal Funds Rate over time
@@ -280,11 +280,11 @@ ggplot(my_data, aes(x = Date, y = Fed_Fund)) +
 
 -   Dovish
 
-    The bank lowers FRED rates in attempt to intice industry and lower unemployment increase consumer spending.🕊️📈
+    -   The bank lowers FRED rates in attempt to entice industry and lower unemployment increase consumer spending.🕊️📈
 
 -   Hawkish
 
-    The bank raises FRED rate which contibrutes to lower spending, consumer pricing, and can lead to an increase in unemployment.🦅📉
+    -   The bank raises FRED rate which contributes to lower spending, consumer pricing, and can lead to an increase in unemployment.🦅📉
 
 ------------------------------------------------------------------------
 
@@ -344,6 +344,6 @@ Federal Reserve Data
 
 <https://fred.stlouisfed.org/series/FEDFUNDS>
 
-Darwhin Gomez
+By Darwhin Gomez, For the full data and code files please check out the repository below.
 
-[Github Repo](https://github.com/DW8888/data608/story2)
+[Github Repo](https://github.com/DW8888/data608/tree/main/Story2)

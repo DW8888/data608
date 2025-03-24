@@ -1,0 +1,51 @@
+File Manifest for ICPSR 37363
+
+Siegel, Michael. State Firearm Law Database: State Firearm Laws, 1991-2019.
+ICPSR37363-v1. Ann Arbor, MI: Inter-university Consortium for Political and
+Social Research [distributor], 2020-02-26.
+http://doi.org/10.3886/ICPSR37363.v1
+
+
+Study-level Documentation
+
+    Filename                            Record  Record    Var.    Date        MD5
+                                        Length  Count     Count   Updated     Checksum
+
+    37363-descriptioncitation.pdf       -       -         -       2020-02-26  -
+
+    37363-related_literature.txt        -       -         -       daily       -
+
+    37363-manifest.txt                  -       -         -       daily       -
+
+
+DS0001 State Firearm Law Database: State Firearm Laws, 1991-2019
+
+    Filename                            Record  Record    Var.    Date        MD5
+                                        Length  Count     Count   Updated     Checksum
+
+    37363-0001-Codebook-ICPSR.pdf       -       -         -       2020-02-26  256db4abba53c4b921311723c5e71257
+
+    37363-0001-Codebook-PI.pdf          -       -         -       2020-02-26  ccc5e3521eb966577ddbde2e5817e67d
+
+    37363-0001-Data.dta                 -       1,450     137     2020-02-26  cadddab2d960d83f43fac0391c3c1d34
+
+    37363-0001-Data.rda                 -       1,450     137     2020-02-26  c1c954727d936d01a22f372e57d12ef7
+
+    37363-0001-Data.sav                 -       1,450     137     2020-02-26  b10968dc6c4204ac3f98807565005410
+
+    37363-0001-Data.stc                 -       1,450     137     2020-02-26  9b286361f82480c796fd552bfc77c5a1
+
+    37363-0001-Data.tsv                 -       1,450     137     2020-02-26  3e609e15ec7d54568cd793b55fb36e7a
+
+    37363-0001-Data.txt                 155     1,450     137     2020-02-26  1cfe14517b29ac5e7700b391a299c51a
+
+    37363-0001-Documentation-PI.xls     -       -         -       2020-02-26  a6fa30e02666db0d48fe28b535ce5fca
+
+    37363-0001-Setup.dct                -       -         -       2020-02-26  20b4743149af5b7e8ebd0d00028140e3
+
+    37363-0001-Setup.do                 -       -         -       2020-02-26  12661ed85d63bf560b6278fb13d34ff3
+
+    37363-0001-Setup.sas                -       -         -       2020-02-26  6ed3c502863eb2025929c228c11415e6
+
+    37363-0001-Setup.sps                -       -         -       2020-02-26  2cad0910431f7ace8bf525fcfd5e8cb5
+
