@@ -1,0 +1,667 @@
+---
+title: "Airbnb what you can actively do to increase revenue"
+author: "Darwhin Gomez"
+
+format: 
+  revealjs:
+    center: true
+    max-scale: 2.0
+    slide-number: true
+    toc: false
+    theme: simple
+    transition: fade
+    incremental: false
+    beamer: default
+    pptx: default
+execute:
+  echo: false
+---
+
+```{r libs}
+library(tidyverse)
+library(readr)
+library(jsonlite)
+library(skimr)
+library(ggcorrplot)
+library(GGally)
+library(viridis)
+theme_set(theme_minimal())  # Set minimal theme for all ggplots
+
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE, message = FALSE,
+                      fig.width = 16, fig.height = 9, include = FALSE, cache = TRUE)
+
+
+```
+
+```{r import_datas, echo=FALSE, include=FALSE}
+
+
+nyc_airbnb_listings <- read_csv("D:/Data6088/Story4/nyc_airbnb_listings.csv")
+
+str(nyc_airbnb_listings)
+summary(nyc_airbnb_listings)
+```
+
+```{r eda, include=FALSE}
+# some occupancy_levels were numeric chars causing iuuses lets factor them
+nyc_airbnb_listings <- nyc_airbnb_listings %>%
+  mutate(
+    # Clean up text to lower case and trim
+    occupancy_level = trimws(tolower(occupancy_level)),
+
+    # Create numeric occupancy from those character values that look numeric
+    occupancy_numeric = suppressWarnings(as.numeric(occupancy_level)),
+
+    # Apply logic
+    occupancy_level = case_when(
+      !is.na(occupancy_numeric) & occupancy_numeric <= 0.33 ~ "Low",
+      !is.na(occupancy_numeric) & occupancy_numeric <= 0.66 ~ "Medium",
+      !is.na(occupancy_numeric) & occupancy_numeric > 0.66 ~ "High",
+      occupancy_level %in% c("low", "medium", "high") ~ tools::toTitleCase(occupancy_level),
+      TRUE ~ NA_character_
+    ),
+
+    # Finally, make it an ordered factor
+    occupancy_level = factor(occupancy_level, levels = c("Low", "Medium", "High"), ordered = TRUE)
+  ) %>%
+  select(-occupancy_numeric)
+```
+
+```{r eda2, include=FALSE}
+skim(nyc_airbnb_listings)
+```
+
+```{r revenue, include=FALSE}
+# exploring revenue corr with rest a numerical features
+
+air_numvs<- nyc_airbnb_listings[sapply(nyc_airbnb_listings, is.numeric)]
+
+cor_matrix <- cor(air_numvs, use = "complete.obs")
+# Extract just the revenue correlations
+revenue_corr <- data.frame(
+  variable = names(cor_matrix["revenue", ]),
+  correlation = cor_matrix["revenue", ]
+) %>%
+  filter(variable != "revenue") %>%
+  arrange(desc(abs(correlation)))
+
+# Create a horizontal bar plot
+ corr_plot <-ggplot(revenue_corr, aes(x = reorder(variable, correlation), y = correlation)) +
+ geom_col(fill = "navy") +
+  scale_fill_viridis_c(option = "C", direction = -1) +
+  coord_flip() +
+  labs(title = "Correlation of Variables with Revenue",
+       x = "Variable",
+       y = "Correlation",
+       fill = "Correlation") +
+  theme_minimal()
+corr_plot
+```
+
+```{r, include=FALSE}
+str(air_numvs)
+
+```
+
+```{r, include=FALSE}
+loc_rev <- nyc_airbnb_listings |>
+  group_by(neighborhood) |>
+  summarise(
+    average_revenue = mean(revenue, na.rm = TRUE),
+    average_price = mean(price, na.rm = TRUE)
+  ) |>
+  arrange(desc(average_revenue))
+loc_rev
+
+nh_host_listigns<- nyc_airbnb_listings|>
+  filter(neighborhood=="NoHo")
+nh_host_listigns
+
+host_listings<- nyc_airbnb_listings |>
+  group_by(host_id) |>
+  summarise(
+    total_revenue = sum(revenue, na.rm = TRUE),
+    average_price = mean(price, na.rm = TRUE)
+  ) |>
+  arrange(desc(total_revenue))
+
+host_listings
+```
+
+```{r , include=FALSE}
+top_host<- nyc_airbnb_listings|>
+  filter(host_id=="107434423")
+top_host
+```
+
+```{r plt1}
+plt1 <- ggplot(nyc_airbnb_listings, aes(x = factor(bedrooms), y = revenue)) +
+  geom_boxplot(alpha = 0.6, color = "black") +
+  ggtitle("Revenue by Number of Bedrooms") +
+  ylab("Revenue") +
+  xlab("Number of Bedrooms")+
+  stat_summary(fun = mean, geom = "text", aes(label = round(..y.., 0)),
+               vjust = -.65 ,hjust=-.25, size = 5)
+
+plt1 + coord_cartesian(ylim = c(0, 3000))
+
+
+```
+
+```{r plt2}
+plt2 <- ggplot(nyc_airbnb_listings, aes(x = factor(bathrooms), y = revenue)) +
+  geom_boxplot(alpha = 0.6, color = "black") +
+  ggtitle("Revenue by Number of Bathrooms") +
+  ylab("Revenue") +
+  xlab("Number of Bathrooms")+
+ stat_summary(fun = mean, geom = "text", aes(label = round(..y.., 0)),
+               vjust = -.65 ,hjust=-.25, size = 5)+
+  labs(caption = "Numbers above each box represent the average revenue for listings within each bathrooms(number of) category.")
+
+
+plt2 + coord_cartesian(ylim = c(0, 3000))
+```
+
+```{r plt3}
+plt3 <- ggplot(nyc_airbnb_listings, aes(x = factor(host_response_time), y = revenue)) +
+  geom_boxplot(alpha = 0.6, color = "black") +
+  ggtitle("Revenue by Host Response Time") +
+  ylab("Revenue") +
+  xlab("Host Response Time") +
+  stat_summary(fun = mean, geom = "text", aes(label = round(..y.., 0)), vjust = -.5,
+               hjust=1.5)+
+  labs(caption = "Numbers above each box represent the average revenue for listings within each host response time category.")
+
+
+plt3 + coord_cartesian(ylim = c(0, 3000))
+
+```
+
+```{r plt3b}
+plt3b <- ggplot(nyc_airbnb_listings, aes(x = factor(host_response_time), y = revenue)) +
+  geom_boxplot(alpha = 0.6, color = "black") +
+  ggtitle("Revenue by Host Response Time") +
+  ylab("Revenue") +
+  xlab("Host Response Time") +
+  stat_summary(fun = mean, geom = "text", aes(label = round(..y.., 0)),
+               vjust = -.65 ,hjust=-.25, size = 5)
+
+plt3b + coord_cartesian(ylim = c(0, 3000))+
+
+labs(caption = "Numbers above each box represent the average revenue for listings within each host response time category.")
+
+```
+
+```{r plt3c}
+plt3c <- ggplot(nyc_airbnb_listings, aes(x = factor(accommodates), y = revenue)) +
+  geom_boxplot(alpha = 0.6, color = "black") +
+  ggtitle("Revenue by Number of Guest") +
+  ylab("Revenue") +
+  xlab("Number of Guests") +
+  stat_summary(fun = mean, geom = "text", aes(label = round(..y.., 0)),
+               vjust = -.65 ,hjust=-.25, size = 5)
+  labs(caption = "Numbers above each box represent the average revenue for listings within eachthe number of guest accomadated by the unit.")
+
+plt3c + coord_cartesian(ylim = c(0, 3000))
+
+
+```
+
+```{r plt4}
+library(dplyr)
+
+# Filter the dataset
+neighborhood_filtered<- nyc_airbnb_listings %>%
+  filter(bedrooms == 2,
+         bathrooms == 2,
+         accommodates >= 6)
+         
+
+
+
+# Plot prices
+plt4 <- ggplot(
+  neighborhood_filtered, aes(x = factor(neighborhood), y = revenue, fill = borough)) +
+  geom_boxplot(alpha = 0.7, color = "black") +
+  ggtitle("Revenue of 2BR/2BA Listings for 6+ Guests in Different Neighborhoods") +
+  xlab("Neighborhood") +
+  ylab("Revenue (USD)") +
+  coord_cartesian(ylim = c(0, 1000)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+plt4
+```
+
+```{r plt5}
+
+custom_shapes <- c("within an hour" = 20,  # filled circle
+                "within a few hours" = 9,  # filled triangle
+                "within a day" = 5,  # filled square
+                "a few days or more" = 4)  # filled diamond
+
+plt5 <- neighborhood_filtered |>
+  ggplot(aes(
+    x = review_scores_rating,
+    y = revenue,
+    color = host_verifications,
+    shape = host_response_time
+  )) +
+  geom_point(alpha = 0.4, size = 3) +
+  scale_color_viridis_d(option="plasma") +
+   scale_shape_manual(values = custom_shapes) +
+  ggtitle("Revenue vs. Review Scores by host verified contacts and Host Response Time") +
+  xlab("Review Score Rating") +
+  ylab("Revenue (USD)") +
+  theme_minimal()
+
+plt5
+
+
+```
+
+```{r plt6a, warning=FALSE}
+library(viridis)
+
+plt6 <- neighborhood_filtered|>
+  filter(!is.na(host_response_time)) |>
+  ggplot(aes(
+    x = occupancy,
+    y = revenue,
+    
+    shape = host_response_time
+  )) +
+  geom_point(alpha = 0.4, size = 3) +
+  geom_smooth(method = "lm", se = FALSE, inherit.aes = FALSE,
+              aes(x = occupancy, y = revenue), color = "red", linewidth = 1.2) +
+  scale_color_viridis_d(option="plasma") +
+   scale_shape_manual(values = custom_shapes) +
+  ggtitle("Revenue vs. Occupancy (Overall Trend,all listings)") +
+  xlab("Occupancy Rate") +
+  ylab("Revenue (USD)") +
+  theme_minimal()
+
+plt6
+
+```
+
+```{r plt7a, warning=FALSE}
+plt7 <- neighborhood_filtered|>
+  filter(!is.na(host_response_time)) |>
+  ggplot(aes(
+    x = occupancy,
+    y = price,
+    #color = borough,
+    shape = host_response_time
+  )) +
+  geom_point(alpha = 0.4, size = 3) +
+  geom_smooth(method = "lm", se = FALSE, inherit.aes = FALSE,
+              aes(x = occupancy, y = price), color = "red", linewidth = 1.2) +
+  scale_color_viridis_d(option="plasma") +
+   scale_shape_manual(values = custom_shapes) +
+  ggtitle("Price vs. Occupancy by Host Response Time") +
+  xlab("Occupancy Rate") +
+  ylab("Price (USD)") +
+  theme_minimal()
+
+plt7
+
+
+```
+
+```{r plt8,warning=FALSE , cache=TRUE}
+slope_labels <- nyc_airbnb_listings |>
+  filter(!is.na(host_response_time), !is.na(occupancy_level)) |>
+  group_by(occupancy_level) |>
+  summarise(
+    slope = coef(lm(revenue ~ price))[["price"]],
+    .groups = "drop"
+  ) |>
+  mutate(
+    label = paste0("Slope: ", round(slope, 2)),
+    x = 2000,
+    y = 1500
+  )
+
+plt8 <- nyc_airbnb_listings |>
+  filter(!is.na(host_response_time), !is.na(occupancy_level)) |>
+  ggplot(aes(
+    y = revenue,
+    x =price,
+    shape = host_response_time
+  )) +
+  geom_point(alpha = 0.1, size = 3) +
+  geom_smooth(method = "lm", se = FALSE, inherit.aes = FALSE,
+              aes(y = revenue, x = price), color = "red", linewidth = .5) +
+  scale_color_viridis_d(option = "B") +
+  geom_text(
+    data = slope_labels,
+    aes(x = x, y = y, label = label),
+    inherit.aes = FALSE,
+    size = 4,
+    color = "black"
+  ) +
+  scale_shape_manual(values = custom_shapes) +
+  facet_wrap(~ occupancy_level, ncol = 1, scales= "free") +
+  ggtitle(" Revenue Vs Price by Occupancy Level\nAll NYC") +
+  ylab("Revenue (USD)") +
+  xlab("Price (USD)") +
+  coord_cartesian(xlim = c(0, 3000), ylim = c(0, 2000)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+plt8
+
+
+
+```
+
+```{r plt9, warning=FALSE}
+slope_labels <- neighborhood_filtered |>
+  filter(!is.na(host_response_time), !is.na(occupancy_level), occupancy_level=="High") |>
+  group_by(occupancy_level) |>
+  summarise(
+    slope = coef(lm(revenue ~ price))[["price"]],
+    .groups = "drop"
+  ) |>
+  mutate(
+    label = paste0("Slope: ", round(slope, 2)),
+    x = 2000,
+    y = 1200
+  )
+
+plt9 <- neighborhood_filtered |>
+  filter(!is.na(host_response_time), !is.na(occupancy_level), ) |>
+  ggplot(aes(
+    y = revenue,
+    x = price,
+    color= occupancy_level,
+    shape = host_response_time
+  )) +
+  geom_point(alpha = 0.4, size = 3) +
+  geom_smooth(method = "lm", se = FALSE, inherit.aes = FALSE,
+              aes(y = revenue, x = price), color = "black", linewidth = .5) +
+  scale_color_viridis_d(option = "J") +
+  geom_text(
+    data = slope_labels,
+    aes(x = x, y = y, label = label),
+    inherit.aes = FALSE,
+    size = 4,
+    color = "black"
+  ) +
+  scale_shape_manual(values = custom_shapes) +
+  #facet_wrap(~ occupancy_level, ncol = 1, scales= "free") +
+  ggtitle(" Revenue Vs Price by Occupancy Level\n(Filteres: 2 Rooms, 2BR, 6+)") +
+  ylab("Revenue (USD)") +
+  xlab("Price (USD)") +
+  coord_cartesian(xlim = c(0, 2500), ylim = c(0, 2500)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+plt9
+```
+
+```{r plt_10a, warning=FALSE}
+
+slope_labels <- neighborhood_filtered |>
+  filter(!is.na(host_response_time), !is.na(occupancy_level) ) |>
+  group_by(occupancy_level) |>
+  summarise(
+    slope = coef(lm(revenue ~ occupancy))[["occupancy"]],
+    .groups = "drop"
+  ) |>
+  mutate(
+    label = paste0("Slope: ", round(slope, 2)),
+    x = 2000,
+    y = 1200
+  )
+plt10 <- neighborhood_filtered |>
+  filter(!is.na(host_response_time), !is.na(occupancy_level) ) |>
+  ggplot(aes(
+    y = revenue,
+    x = occupancy,
+    color = occupancy_level,
+    shape = host_response_time
+  )) +
+  geom_point(alpha = 0.4, size = 3) +
+  geom_smooth(method = "lm", se = FALSE, inherit.aes = FALSE,
+              aes(y = revenue, x = occupancy ), color = "black", linewidth = .5) +
+  scale_color_viridis_d(option = "viridis") +
+  geom_text(
+    data = slope_labels,
+    aes(x = x, y = y, label = label),
+    inherit.aes = FALSE,
+    size = 4,
+    color = "black"
+  ) +
+  scale_shape_manual(values = custom_shapes) +
+ 
+  ggtitle(" Revenue Vs Price by Occupancy Level\n(Filteres: 2 Rooms, 2BR, 6+)") +
+  ylab("Revenue (USD)") +
+  xlab("Occunpacy percentage") +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0, 3000)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+plt10
+```
+
+```{r geo}
+library(geojsonsf)
+
+nyc_geo <- geojson_sf(
+"neighbourhoods.geojson")
+nyc_geomap<-ggplot(nyc_geo, aes(fill = neighbourhood)) +
+  geom_sf() +
+  ggtitle("Colored Map of NYC Highlighting Different Neighborhoods") +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank()
+  )
+```
+
+```{r mapping_function}
+map_airbnb_feature <- function(data, geo, feature, palette = "plasma", cap = NULL, title_prefix = "Average") {
+  
+  # Dynamically summarize the selected feature
+  summary_data <- data |>
+    group_by(neighborhood) |>
+    summarise(value = mean(.data[[feature]], na.rm = TRUE), .groups = "drop")
+  
+  # Optionally cap the values
+  if (!is.null(cap)) {
+    summary_data <- summary_data |>
+      mutate(value = pmin(value, cap))
+  }
+
+  # Join with spatial data
+geo_joined <- geo |>
+  left_join(summary_data, by = c("neighbourhood" = "neighborhood"))
+
+  # Build the plot
+  ggplot(geo_joined) +
+    geom_sf(aes(fill = value), color = "white", size = 0.2) +
+    scale_fill_viridis_c(option = palette, name = paste0(title_prefix, " ", gsub("_", " ", feature)), na.value = "grey90") +
+    labs(
+      title = paste0(title_prefix, " ", tools::toTitleCase(gsub("_", " ", feature)), " by NYC Neighborhood"),
+      caption = "Data: NYC Airbnb Listings & Geo Data"
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "right",
+      axis.text = element_blank(),
+      axis.title = element_blank(),
+      panel.grid = element_blank()
+    )
+}
+```
+
+```{r plot11}
+#plotting avg price per neighborhood on a nyc map
+plt11<-map_airbnb_feature(nyc_airbnb_listings, nyc_geo, feature = "price")
+plt11
+```
+
+```{r plot_12}
+#plotting avg rev per neighborhood on a nyc map
+plt12<-map_airbnb_feature(nyc_airbnb_listings, nyc_geo, feature = "revenue")
+plt12
+```
+
+```{r plt13}
+#plotting avg occupancy per neighborhood on a nyc map
+plt13<-map_airbnb_feature(nyc_airbnb_listings, nyc_geo, feature = "occupancy")
+plt13
+
+```
+
+## Airbnb NYC
+
+-   Their are a great amount of options available but what leads to a listings that generate the better revenue?
+
+-   Is it space, bedrooms, neighborhoods, bathrooms, pricing?
+
+    ```{r slide 1, include=TRUE}
+    nyc_geomap
+    ```
+
+## Bedrooms
+
+::: notes
+This reveals that mean revenue increases as the number of bedrooms increases, there are some oddities at 9 BR and 11BR
+:::
+
+```{r slide2, warning=FALSE, include=TRUE}
+plt1
+```
+
+## Bathrooms
+
+::: notes
+As we with bedrooms the number of bathrooms affects the mean revenue of listings.
+:::
+
+```{r slide3, include=TRUE}
+plt2
+```
+
+## Accommodates Number of Guests
+
+::: notes
+:::
+
+```{r sllide4, include=TRUE}
+plt3c
+```
+
+## Similar listings, does neighborhood matter?
+
+::: notes
+Here we see that the are very different average rates for similar listings depending on neighborhoods.
+:::
+
+```{r slide5, include=TRUE}
+plt4
+```
+
+## Mapping Revenue (All listings)
+
+::: notes
+The map highlights some very lucrative neighborhoods in cultural and affluent hotpots like SOHO, Greenwich Village and the Upper West and East Sides.
+:::
+
+```{r slide6, include=TRUE}
+plt12
+```
+
+## What about pricing?
+
+::: notes
+Does pricing affect revenue lets start by looking at average pricing throughout NYC
+
+-   Vast majority of prices are below 400
+
+-   Manhattan pricing higher than other boroughs
+:::
+
+```{r slide7, include=TRUE}
+plt11
+```
+
+## How about Occupancy (How often a listing is booked)?
+
+-   Manhattan and Manhattan adjacent neighborhood enjoy above 65% occupancy levels.
+
+    ```{r slide8, include=TRUE}
+
+    plt13
+    ```
+
+## Does host attentiveness matter?
+
+::: notes
+Listings who's host who are slow to respond have lower average revenue.
+:::
+
+```{r slide9, include=TRUE}
+plt3b
+```
+
+## Bringing it together
+
+-   Revenue increases as occupancy increases.
+
+-   Prices decrease as occupancy increases.
+
+## 
+
+```{r slide10ab, include=TRUE}
+plt6
+```
+
+## 
+
+```{r slide10ba, include=TRUE}
+plt7
+```
+
+## Revenue Price Trend for different occupancy levels.
+
+```{r slide11, include=TRUE, cache = TRUE}
+plt8
+``` 
+
+::: notes
+Clearly we see here the pricing of listing has a possitive affect on revenue for listings that have a high occupancy \> 68%
+
+If we want price more
+:::
+
+## Lets look at a our filtered data 2 br,2 ba, 6 guest
+
+```{r slide12, include=TRUE}
+plt10
+```
+
+## 
+
+```{r slide13c, include=TRUE}
+plt9
+```
+
+## Summary to increasing revenue
+
+-   Higher Bedrooms increase revenue.
+
+-   Accommodate more guest.
+
+-   Respond to inquiries quickly.
+
+-   Prioritize staying booked even if it means lowering price .
+
+-   When other things are equal: location increases reveune significantly.
+
+-   Price increases revenue for host whom are attentive; respond quickly for others, not so much.
