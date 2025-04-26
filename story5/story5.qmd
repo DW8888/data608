@@ -403,7 +403,7 @@ Roof material is another significant feature. This plot shows the predicted sale
 
 -   Data : <https://jse.amstat.org/v19n3/decock.pdf>
 
--   Github
+-   [Code_Github](https://github.com/DW8888/data608/blob/main/story5/story5.qmd "Link to .qmd with code for figures and model")
 
 -   \*\* The Model trained here did not incorporate all original predictors, predictors with non factor levels, and exactly correlated predictors like GrLivArea. Also visualizations show model predictions on **75**/25 split not the entire data set.
 
