@@ -1,0 +1,412 @@
+---
+title: "Ames, Iowa Real Estate Price Predictions"
+author: "Darwhin Gomez"
+
+format: 
+  revealjs:
+    center: true
+    max-scale: 2.0
+    slide-number: true
+    toc: false 
+    theme: simple
+    transition: fade
+    incremental: false
+    beamer: default
+    pptx: default
+execute:
+  echo: false
+---
+
+```{r libs}
+library(broom) 
+library(marginaleffects)
+library(tidyverse)
+library(readr)
+library(jsonlite)
+library(skimr)
+library(ggcorrplot)
+library(GGally)
+library(viridis)
+library(carat)
+theme_set(theme_minimal())  # Set minimal theme for all ggplots
+
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE, message = FALSE,
+                      fig.width = 16, fig.height = 9, include = FALSE, cache = TRUE)
+
+```
+
+```{r data}
+amnes<-read.csv("train.csv")
+```
+
+```{r factors}
+amnes$id <- NULL
+amnes[] <- lapply(amnes, function(col) {
+  if (is.character(col)) as.factor(col) else col
+})
+```
+
+```{r str}
+summary
+str(amnes)
+```
+
+```{r counts}
+factor_counts <- lapply(amnes[, sapply(amnes, is.factor)], table)
+
+# Print each factor and its level counts
+for (name in names(factor_counts)) {
+  cat("\n---", name, "---\n")
+  print(factor_counts[[name]])
+}
+```
+
+```{r model prep}
+library(caret)
+set.seed(123)
+
+
+amnes_cleaned<- amnes|>
+  select(-c(PoolQC, MiscFeature, CentralAir, Street, Utilities, Heating, PavedDrive,Alley, MasVnrType, BsmtQual, BsmtCond, BsmtExposure,
+    BsmtFinType1, BsmtFinType2, FireplaceQu, GarageType,
+    GarageFinish, GarageQual, GarageCond, Fence))
+
+
+# 75–25 split on the cleaned data
+
+split_index <- createDataPartition(amnes_cleaned$SalePrice, p = 0.75, list = FALSE)
+
+train_data <- amnes_cleaned[split_index, ]
+test_data <- amnes_cleaned[-split_index, ]
+
+na_factors <- sapply(train_data, function(col) is.factor(col) && any(is.na(col)))
+# Drop unused levels in training data
+train_data <- train_data %>%
+  mutate(across(where(is.factor), droplevels))
+
+# Force test data factors to use training factor levels
+test_data <- test_data %>%
+  mutate(across(where(is.factor), ~ factor(., levels = levels(train_data[[cur_column()]]))))
+
+cat("⚠️  Factor columns with missing values in training set:\n")
+print(names(train_data)[na_factors])
+```
+
+```{r lm}
+# Fit a linear model using all predictors
+lm_model <- lm(SalePrice ~ ., data = train_data)
+
+# Summary of the model
+summary(lm_model,)
+
+summary(lm_model)$r.squared 
+```
+
+```{r pred}
+test_data_clean <- test_data[complete.cases(test_data), ]
+
+# Make predictions only on those
+lm_preds <- predict(lm_model, newdata = test_data_clean)
+actuals <- test_data_clean$SalePrice
+
+# Recalculate performance
+lm_rmse <- sqrt(mean((lm_preds - actuals)^2))
+lm_r_squared <- 1 - sum((lm_preds - actuals)^2) / sum((actuals - mean(actuals))^2)
+
+lm_rmse2<-cat("RMSE:", round(lm_rmse, 2), "\n")
+lm_rsqaured2<-cat("R-squared:", round(lm_r_squared, 4), "\n")
+Lm_risiduals<- residuals(lm_model)
+Lm_risiduals
+
+
+```
+
+```{r}
+
+lm_summary <- broom::tidy(lm_model)
+
+# View top predictors sorted by absolute effect size
+lm_summary <- lm_summary %>%
+  filter(!is.na(estimate)) %>%
+  arrange(desc(abs(estimate)))
+
+head(lm_summary, 30
+     )
+top_sig <- broom::tidy(lm_model) %>%
+  filter(term != "(Intercept)") %>%
+  arrange(p.value) %>%
+  slice(1:15)
+
+top_siglm <- ggplot(
+  top_sig, aes(x = reorder(term, -p.value), y = -log10(p.value))) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 15 Most Statistically Significant Features",
+       x = "Feature",
+       y = expression(-log[10](p-value))) +
+  theme_minimal()+
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20)
+  )
+top_siglm
+tidy_lm <-broom::tidy(lm_model)
+```
+
+```{r qq}
+resid_df <- data.frame(residuals = residuals(lm_model))
+
+lm_qq<- ggplot(resid_df, aes(sample = residuals)) +
+  stat_qq() +
+  stat_qq_line(color = "red", lwd = 1) +
+  labs(title = "Q-Q Plot of Residuals",
+       x = "Theoretical Quantiles",
+       y = "Sample Residuals") +
+  theme_minimal()
+lm_qq
+```
+
+## What factors drive sale price?
+
+Buying or selling a home can be very stressful to experienced buyers and sellers. Sometimes even browsing online can become incredibly frustrating. Two similar homes can vary in price significantly and many times the reasons are not clear.
+
+\
+Lets try to make sense of what factors are actually affecting a home's price.
+
+## Intuition Size, Neighborhood
+
+```{r slide3, include=TRUE}
+amnes |>
+  ggplot(aes(x = GrLivArea, y = (SalePrice/1000))) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Sale Price vs Above Grade Living Area",
+    x = "Above Grade Living Area (sq ft)",
+    y = "Sale Price (USD, Thousands)")+
+    theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20)
+  
+  ) 
+
+```
+
+::: notes
+A simple linear model showing the relationship between a property's general living space (above ground) and its sale price. The trend is positive, indicating that as living space increases, the sale price tends to increase as well.
+:::
+
+## Neighborhoods
+
+```{r slide4, include=TRUE}
+overall_mean <- mean(amnes$SalePrice, na.rm = TRUE)
+
+amnes |>
+  group_by(Neighborhood) |>
+  summarise(mean_price = mean(SalePrice, na.rm = TRUE)) |>
+  ggplot(aes(x = reorder(Neighborhood, mean_price), y = mean_price / 1000)) +
+  geom_col(fill = "steelblue") +
+  geom_hline(yintercept = overall_mean / 1000, color = "red", linetype = "dashed", linewidth = 1) +
+  coord_flip() +
+  xlab("Neighborhood") +
+  ylab("Mean Sale Price (thousands)") +
+  ggtitle("Mean Sale Price by Neighborhood with Overall Average") +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20)
+  )
+
+cat("Sale price mean (red line) of data =", overall_mean, "\n")
+
+
+```
+
+## Modeling {style=".smaller"}
+
+As we can see, sale prices vary due to a number of factors. But how can we get a holistic, weighted representation of how these factors influence the sale price? One way is to model it. We can use a regression model to predict house prices and then extract the contributing factors and their impact on the model.
+
+**Linear Regression** – to understand linear relationships between features and sale price. The model uses 59 predictors.
+
+## 
+
+::: panel-tabset
+## Linear model Formula
+
+```{r slide5, include=TRUE}
+
+formula(lm_model)
+```
+
+## Linear model Summary
+
+```{r slide5b, include=TRUE}
+summary(lm_model)
+```
+
+## Linear Model Evaluation
+
+```{r slide5c, include=TRUE}
+
+print(" Train Rsquared"  )
+summary(lm_model)$r.squared
+print("Test Rsquared")
+lm_r_squared
+print("Test RMSE")
+lm_rmse
+```
+:::
+
+::: notes
+Model was trained on 59 features, some features that minimal information in factors were removed, The trained model has an r square of .94 showing a good fit for accounting the variance in sales price, the model preforms less amirably by the same metric on the test set with R squared of .74
+
+Still the model does a solid job at predicting prices withe a rmse of ....
+:::
+
+## Extracted Significant Features
+
+```{r slide6,include=TRUE}
+top_siglm
+```
+
+## Model Residuals
+
+::: notes
+The QQ plot reveals signs of heteroscedasticity in the residuals, especially in the tails. This suggests that the assumption of constant variance may not hold. In practical terms, it could indicate that the model tends to over-predict or under-predict at the high and low ends of sale prices.
+:::
+
+```{r slide7, include=TRUE}
+lm_qq
+```
+
+## Predictions
+
+::: notes
+Here we see the model overlaid on the original data for sale price versus first-floor square footage. The model removed above-grade square footage because it combines first- and second-floor square footage, resulting in a singularity.
+:::
+
+```{r slide8,include=TRUE}
+
+
+
+lm_model <- lm(I(SalePrice / 1000) ~ ., data = train_data)
+
+
+plot_predictions(lm_model, condition = "X1stFlrSF") +
+  geom_point(data = train_data, aes(x = X1stFlrSF, y = SalePrice / 1000), 
+             alpha = 0.4, color = "red") +
+  ggtitle("Linear Model with 95% Confidence Interval") +
+  xlab("1st Floor Square Footage") +
+  ylab("Sale Price (in thousands USD)") +
+  theme_minimal() +
+  theme(
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16)
+  )
+
+
+```
+
+## Predictions Other Significant Features
+
+::: notes
+This visualization shows our linear model's predictions for lot area in square feet, factoring in overall quality, with higher-quality properties fetching much more than their lower-quality counterparts.
+:::
+
+```{r slide11, include=TRUE}
+library(viridis) 
+
+lm_model |> 
+  plot_predictions(condition = c("LotArea", "OverallQual")) +
+  labs(
+    title = "Lot Size and Quality Effect on Sales Price",
+    x = "Lot Area Square Ft",
+    y = " Sale Price (USD, Thousands)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20),
+    plot.title = element_text(size = 30, face = "bold", hjust = 0.5),
+    legend.background = element_rect(fill = "white", color = "black")
+  )
+```
+
+## 
+
+```{r slide12, include=TRUE}
+
+predictions_df <- predictions(lm_model, newdata = datagrid(Neighborhood = unique(train_data$Neighborhood)))
+
+
+predictions_df <- predictions_df |>
+  mutate(Neighborhood = reorder(Neighborhood, estimate))
+
+
+ggplot(predictions_df, aes(x = Neighborhood, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2, color = "red") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Neighborhood Effect on  predicted Sale Price \n(Sorted by Predicted Price, with 95% CI)",
+    x = "Neighborhood",
+    y = "Predicted Sale Price Thousands (USD)"
+  ) +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20),
+    plot.title = element_text(size = 25, face = "bold", hjust = 0.5)
+  )
+
+```
+
+## The Roof
+
+```{r slide13, include=TRUE}
+
+lm_model |> plot_predictions(condition = c("RoofMatl", "RoofStyle")) +
+ labs(title = "Price predicted by Roof Material",
+ x="Ro0fing Material",
+ y="Price (USD)")+
+  theme_minimal() +
+   coord_flip()+
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20)
+  )
+```
+
+::: notes
+Roof material is another significant feature. This plot shows the predicted sale price ranges for properties depending on the roof type, with colors representing the roof style.
+:::
+
+## Takeaways
+
+-   Price is directly impacted by square footage, homes with more livable square footage tend to sell higher.
+
+-   Price can vary significantly by neighborhood.
+
+-   Better overall quality homes sell at higher prices even for comparable Lot sizes.
+
+-   Building Materials for the roof have a significant impact on sale price.
+
+## Data Code
+
+-   Data : <https://jse.amstat.org/v19n3/decock.pdf>
+
+-   [Code_Github](https://github.com/DW8888/data608/blob/main/story5/story5.qmd "Link to .qmd with code for figures and model")
+
+-   \*\* The Model trained here did not incorporate all original predictors, predictors with non factor levels, and exactly correlated predictors like GrLivArea. Also visualizations show model predictions on **75**/25 split not the entire data set.
+
+    \
+
+    **Thanks**

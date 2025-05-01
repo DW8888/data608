@@ -1,0 +1,10 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/1280238/ef49bf0db1104fbdb22ae71f9a6f4e14
+bundleId: https://api.rpubs.com/api/v1/document/1280238/ef49bf0db1104fbdb22ae71f9a6f4e14
+url: http://rpubs.com/Darwhin88/1280238
+version: 1

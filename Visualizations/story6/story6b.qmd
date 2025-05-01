@@ -1,0 +1,698 @@
+---
+title: "Instacart Customer Segmentation"
+author: "Darwhin Gomez"
+format: 
+  revealjs:
+    center: true
+    max-scale: 2.0
+    slide-number: true
+    toc: false 
+    theme: simple
+    transition: fade
+    incremental: false
+    beamer: default
+    pptx: default
+execute:
+  echo: false
+---
+
+```{r libs}
+library(broom) 
+library(marginaleffects)
+library(tidyverse)
+library(readr)
+library(jsonlite)
+library(skimr)
+library(ggcorrplot)
+library(GGally)
+library(viridis)
+library(carat)
+library(dbscan)
+library(plotly)
+library(scatterplot3d)
+library(ggforce)
+library(ggrepel)
+library(patchwork)
+library(ggwordcloud)
+theme_set(theme_minimal())  # Set minimal theme for all ggplots
+
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE, message = FALSE,
+                      fig.width = 16, fig.height = 9, include = FALSE, cache = TRUE)
+
+```
+
+```{r Datas}
+user_features_df <- read_csv("user_features.csv")
+aisles_df <- read_csv("aisles.csv")
+departments_df <- read_csv("departments.csv")
+products_df <- read_csv("products.csv")
+orders_df <- read_csv("orders.csv")
+order_products_df <- read_csv("all_order_products.csv")
+```
+
+```{r glimpse}
+glimpse(user_features_df)
+glimpse(aisles_df)
+glimpse(departments_df)
+glimpse(products_df)
+glimpse(orders_df)
+glimpse(order_products_df)
+str(user_features_df)
+```
+
+```{r}
+dim(user_features_df)
+
+```
+
+```{r proceseeing}
+# Total number of purchases per user
+user_features_df <- user_features_df %>%
+  mutate(total_purchases = rowSums(select(., 2:135)))  
+
+# Fraction of purchases per aisle (normalize)
+user_features_df <- user_features_df %>%
+  mutate(across(2:135, ~ .x / total_purchases))
+
+# Add log of total purchases
+user_features_df <- user_features_df %>%
+  mutate(log_total_purchases = log1p(total_purchases))  
+
+user_order_counts <- orders_df %>%
+  group_by(user_id) %>%
+  summarize(total_orders = max(order_number))
+
+# Joining on user_id
+user_features_df <- user_features_df %>%
+  left_join(user_order_counts, by = "user_id")
+
+# log transformation
+user_features_df <- user_features_df %>%
+  mutate(log_total_orders = log1p(total_orders))
+
+str(user_features_df)
+```
+
+```{r pca,}
+# PCA (excluding user_id, log_total_purchases, etc.)
+pca_features <- user_features_df %>% select(2:135)
+
+# Run PCA and scale features
+pca_result <- prcomp(pca_features, scale. = TRUE)
+
+# Scree plot
+plot(pca_result, type = "lines", main = "Scree Plot: Variance Explained by Each PC")
+
+```
+
+```{r pcaload}
+loadings_df <- as.data.frame(pca_result$rotation)
+loadings_df$feature <- rownames(loadings_df)
+
+# Function to extract top N features for a given PC
+top_features_for_pc <- function(pc_name, n = 10) {
+  loadings_df %>%
+    select(feature, all_of(pc_name)) %>%
+    mutate(abs_value = abs(.data[[pc_name]])) %>%
+    arrange(desc(abs_value)) %>%
+    slice(1:n)
+}
+top_pc1 <- top_features_for_pc("PC1", 10)
+top_pc2 <- top_features_for_pc("PC2", 10)
+top_pc3 <- top_features_for_pc("PC3", 10)
+top_pc4 <- top_features_for_pc("PC4", 10)
+```
+
+```{r pcaloadplot}
+pc1plot<-ggplot(top_pc1, aes(x = reorder(feature, .data$PC1), y = PC1)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 10 Features Contributing to PC1",
+       x = "Feature (Aisle)",
+       y = "Loading on PC1") +
+  theme_minimal()
+pc2plot<-ggplot(top_pc2, aes(x = reorder(feature, .data$PC2), y = PC2)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 10 Features Contributing to PC2",
+       x = "Feature (Aisle)",
+       y = "Loading on PC2") +
+  theme_minimal()
+pc3plot<-ggplot(top_pc3, aes(x = reorder(feature, .data$PC3), y = PC3)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 10 Features Contributing to PC3",
+       x = "Feature (Aisle)",
+       y = "Loading on PC3") +
+  theme_minimal()
+pc4plot<-ggplot(top_pc4, aes(x = reorder(feature, .data$PC4), y = PC4)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 10 Features Contributing to PC4",
+       x = "Feature (Aisle)",
+       y = "Loading on PC4") +
+  theme_minimal()+ 
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20)
+  )
+pc1plot
+pc2plot
+pc3plot
+pc4plot
+```
+
+```{r arrows}
+# Extract PCA loadings for PC1 and PC2
+loadings_arrow <- as.data.frame(pca_result$rotation) %>%
+  rownames_to_column("feature") %>%
+  select(feature, PC1, PC2)
+
+# Arrow style
+# Filter: keep only features that contribute meaningfully to PC1 or PC2
+loadings_filtered <- loadings_arrow %>%
+  filter(abs(PC1) > 0.12 | abs(PC2) > 0.12)
+
+# Define arrow style
+arrow_style <- arrow(
+  angle = 20,
+  length = grid::unit(8, "pt"),
+  ends = "first",
+  type = "closed"
+)
+
+# Plot
+arrowpc1_2<-ggplot(loadings_filtered, aes(x = PC1, y = PC2)) +
+  geom_segment(aes(xend = 0, yend = 0), 
+               arrow = arrow_style,
+               color = "black") +
+  geom_text_repel(aes(label = feature), 
+                  size = 3,
+                  max.overlaps = 30) +
+  xlim(-0.5, 0.5) + ylim(-0.4, 0.5) +
+  coord_fixed() +
+  labs(
+    title = "Top Contributing Features to PC1 and PC2(.12)",
+    x = "PC1", y = "PC2"
+  ) +
+  theme_minimal(base_size = 14)
+arrowpc1_2
+```
+
+```{r functionarrow}
+loadings_arrow <- as.data.frame(pca_result$rotation) %>%
+  rownames_to_column("feature") %>%
+  select(feature, starts_with("PC"))
+
+# Helper function for plotting any 2 PCs
+arrow_plot <- function(pc_x, pc_y, threshold = 0.15) {
+  plot_df <- loadings_arrow %>%
+    select(feature, x = all_of(pc_x), y = all_of(pc_y)) %>%
+    filter(abs(x) > threshold | abs(y) > threshold)
+
+  ggplot(plot_df, aes(x = x, y = y)) +
+    geom_segment(aes(xend = 0, yend = 0), 
+                 arrow = arrow(angle = 20, length = grid::unit(8, "pt"),
+                               ends = "first", type = "closed"),
+                 color = "steelblue") +
+    geom_text_repel(aes(label = feature), size = 3, max.overlaps = 30) +
+    coord_fixed() +
+    xlim(-0.5, 0.5) + ylim(-0.4, 0.4) +
+    labs(
+      title = paste("Top Features: ", pc_x, "vs", pc_y,"(.15+)"),
+      x = pc_x, y = pc_y
+    ) +
+    theme_minimal(base_size = 14)+ theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20)
+  )
+}
+p12 <- arrow_plot("PC1", "PC2")
+p13 <- arrow_plot("PC1", "PC3")
+p14 <- arrow_plot("PC1", "PC4")
+p23 <- arrow_plot("PC2", "PC3")
+p24 <- arrow_plot("PC2", "PC4")
+p43 <- arrow_plot("PC4", "PC3")
+```
+
+```{r}
+p13
+p14
+p43
+p12
+```
+
+```{r clusterring}
+pca_scores <- as.data.frame(pca_result$x[, 1:4])
+
+# K-means clustering
+set.seed(123)
+wss <- vector()
+
+# Try k from 2 to 15
+for (k in 2:15) {
+  kmeans_model <- kmeans(pca_scores[, 1:4], centers = k, nstart = 25)  # 4 PCs
+  wss[k] <- kmeans_model$tot.withinss
+}
+
+# Make a tibble to plot
+elbow_df <- tibble(
+  k = 2:15,
+  wss = wss[2:15]
+)
+
+Kmeans_elbow <- ggplot(elbow_df, aes(x = k, y = wss)) +
+  geom_line(color = "black") +
+  geom_point(size = 2) +
+  geom_hline(yintercept = elbow_df$wss[elbow_df$k == 8], color = "red", linetype = "dashed") +
+  labs(
+    title = "Elbow Plot for K-Means Clustering",
+    x = "Number of Clusters (k)",
+    y = "Total Within-Cluster Sum of Squares (WSS)"
+  ) +
+  theme_minimal()+ 
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20)
+  )
+Kmeans_elbow
+```
+
+```{r}
+kmeans_results <- list()
+plots <- list()
+for (k in 4:8) {
+  set.seed(123)
+  km <- kmeans(pca_scores[, 1:4], centers = k, nstart = 25)
+  kmeans_results[[as.character(k)]] <- km
+  
+  # Create dataframe for plotting
+  plot_df <- pca_scores %>%
+    as_tibble() %>%
+    mutate(cluster = factor(km$cluster))
+  
+  # Plot PC1 vs PC2 for visualization
+  p <- ggplot(plot_df, aes(x = PC1, y = PC2, color = cluster)) +
+    geom_point(alpha = 0.8, size = 1.5) +
+    #geom_mark_ellipse(aes(fill = cluster), alpha = 0.1, show.legend = FALSE) +
+    scale_color_viridis(discrete = TRUE, option = "D") +
+    labs(
+      title = paste("K-Means Clusters (k =", k, ")"),
+      x = "PC1",
+      y = "PC2"
+    ) +
+    theme_minimal()+ theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20)
+  )
+  
+  plots[[as.character(k)]] <- p
+}
+
+# Combine plots into a nice grid
+wrap_plots(plots, ncol = 2)
+```
+
+```{r k means6,}
+
+plots[["4"]]
+```
+
+```{r plotkmeans}
+
+
+plots[["5"]]
+
+```
+
+```{r}
+plots[["6"]]
+plots[["7"]]
+plots[["8"]]
+```
+
+```{r 3d1}
+km8 <- kmeans_results[["8"]]
+viridis_colors <- viridis(n = 8, option = "M")   
+# Build plot data with cluster labels
+plot_df <- pca_scores %>%
+  as_tibble() %>%
+  mutate(cluster = factor(km8$cluster))
+
+# Interactive 3D plot
+plot3d123<-plot_ly(
+  data =plot_df,
+  x = ~PC1,
+  y = ~PC2,
+  z = ~PC3,
+  type = 'scatter3d',
+  mode = 'markers',
+  color = ~cluster,
+  colors = viridis_colors,
+  marker = list(size = 1)  
+) %>%
+  layout(
+    title = "K-Means Clusters (Interactive 3D - PCA 1-3)",
+   scene = list(
+      xaxis = list(title = "PC1", titlefont = list(size = 18)),
+      yaxis = list(title = "PC2", titlefont = list(size = 18)),
+      zaxis = list(title = "PC3", titlefont = list(size = 18))
+    ),
+    legend = list(title = list(text = "Cluster")))
+```
+
+```{r 3d2}
+plot3d124<-plot_ly(
+  data =plot_df,
+  x = ~PC1,
+  y = ~PC2,
+  z = ~PC4,
+  type = 'scatter3d',
+  mode = 'markers',
+  color = ~cluster,
+  colors = viridis_colors,
+  marker = list(size = 1)  
+) %>%
+  layout(
+    title = "K-Means Clusters (Interactive 3D - PCA 1,2,4)",
+    scene = list(
+      xaxis = list(title = "PC1", titlefont = list(size = 18)),
+      yaxis = list(title = "PC2", titlefont = list(size = 18)),
+      zaxis = list(title = "PC4", titlefont = list(size = 18))
+    ),
+    legend = list(title = list(text = "Cluster"))
+  )
+```
+
+```{r 3d3}
+plot3d134<-plot_ly(
+  data =plot_df,
+  x = ~PC1,
+  y = ~PC3,
+  z = ~PC4,
+  type = 'scatter3d',
+  mode = 'markers',
+  color = ~cluster,
+  colors = viridis_colors,
+  marker = list(size = 1)  
+) %>%
+  layout(
+    title = "K-Means Clusters (Interactive 3D - PCA 1,3,4)",
+    scene = list(
+      xaxis = list(title = "PC1", titlefont = list(size = 18)),
+      yaxis = list(title = "PC3", titlefont = list(size = 18)),
+      zaxis = list(title = "PC4", titlefont = list(size = 18))
+    ),
+    legend = list(title = list(text = "Cluster"))
+  )
+
+```
+
+```{r}
+plot3d123
+```
+
+```{r}
+plot3d124
+```
+
+```{r}
+plot3d134
+```
+
+```{r labeling}
+user_features_df <- user_features_df %>%
+  mutate(cluster = as.factor(kmeans_results[["8"]]$cluster))
+
+```
+
+```{r grouping}
+cluster_profiles <- user_features_df %>%
+  select(2:135, cluster) %>%
+  group_by(cluster) %>%
+  summarise(across(everything(), mean))
+```
+
+```{r}
+top_features_per_cluster <- cluster_profiles %>%
+  pivot_longer(-cluster, names_to = "feature", values_to = "mean_value") %>%
+  group_by(cluster) %>%
+  slice_max(mean_value, n = 15, with_ties = FALSE) %>%
+  arrange(cluster, desc(mean_value))
+
+```
+
+```{r}
+top_features_per_cluster
+
+```
+
+```{r}
+
+Wordcloudfc4 <- top_features_per_cluster %>%
+  filter(cluster %in% c("1", "2", "3", "4")) %>%
+  ggplot(aes(label = feature, size = mean_value)) +
+  geom_text_wordcloud_area() +
+  facet_wrap(~ cluster) +
+  scale_size_area(max_size = 15) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Top Aisles by Cluster (1–4)",
+    subtitle = "Word size reflects average purchase share in cluster",
+    x = NULL, y = NULL
+  )+ theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20)
+  )
+
+# Word cloud for clusters 5 to 8
+Wordcloudfc8 <- top_features_per_cluster %>%
+  filter(cluster %in% c("5", "6", "7", "8")) %>%
+  ggplot(aes(label = feature, size = mean_value)) +
+  geom_text_wordcloud_area() +
+  facet_wrap(~ cluster) +
+  scale_size_area(max_size = 15) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Top Aisles by Cluster (5–8)",
+    subtitle = "Word size reflects average purchase share in cluster",
+    x = NULL, y = NULL
+  ) + theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20)
+  )
+
+Wordcloudfc4
+Wordcloudfc8
+```
+
+## **Customer Segmentation – Instacart**
+
+::: {style=".tiny"}
+Using the pre-processed dataset `user_features.csv`, which contains aggregated user-level data.
+
+**Goal:**\
+To gain insight into the types of customers shopping on Instacart, based on the **percentage of item types** (aisles) purchased over time.
+
+**Dimensions of the Data:**
+
+-   Each row represents a unique customer (`user_id`)
+
+    206209
+
+-    Columns represent the proportion of items purchased from different product categories (aisles/variables)
+
+`135 different aisles`
+:::
+
+## Principle Component Analysis
+
+-   Because of the high number of variables in the dataset, I applied **Principal Component Analysis (PCA)** to reduce dimensionality. This allowed me to identify the key principal components and better understand the underlying structure of the data.
+-   4 seems to be a good number for our PCs based on the scree plot.
+
+## 
+
+```{r slide2, include=TRUE}
+plot(pca_result, type = "lines", main = "Scree Plot: Variance Explained by Each PC")
+```
+
+## Plotting data in 2 dimensions using PCA
+
+-   Getting a look at our data, not much insight yet,
+
+```{r slide3, include=TRUE}
+plot_df |>
+  ggplot(aes(PC1, PC2)) +
+  geom_point(alpha = 0.01, color = "grey24") +
+  labs(
+    title = "PCA Scatterplot: PC1 vs PC2",
+    x = "Principal Component 1",
+    y = "Principal Component 2"
+  ) +
+  theme_minimal()
+```
+
+## Principle Components Break Downs 
+
+Top Ten Features (Loadings) for each principle component
+
+## 
+
+::: panel-tabset
+## PC1
+
+```{r slide4a,include=TRUE}
+pc1plot
+```
+
+## PC2
+
+```{r slide4b,include=TRUE}
+pc2plot
+```
+
+## PC3
+
+```{r slide4c,include=TRUE}
+pc3plot
+```
+
+## PC4
+
+```{r slide4d,include=TRUE}
+pc4plot
+```
+:::
+
+## **Arrow Plots (Eigenvectors) – PCA**
+
+The following plots display the eigenvectors (loadings) of the original variables projected into 2D principal component space. Only features with an absolute loading of **at least 0.15** on either axis are shown, highlighting the most influential variables in each component pairing.
+
+## 
+
+::: panel-tabset
+## PC 1,2
+
+```{r slide5a,include=TRUE}
+p12
+```
+
+## PC 1,3
+
+```{r slide5b,include=TRUE}
+p13
+```
+
+## PC 1,4
+
+```{r slide5c,include=TRUE}
+p14
+```
+
+## PC 2,3
+
+```{r slide5d,include=TRUE}
+p23
+```
+
+## PC 2,4
+
+```{r slidee,include=TRUE}
+p24
+```
+
+## PC 3,4
+
+```{r slidef,include=TRUE}
+p43
+```
+:::
+
+## Clustering K-Means
+
+::: notes
+To better understand the different user groups, I applied the K-Means clustering algorithm. The first step was to determine an appropriate number of clusters **(K).** After plotting the within-cluster sum of squares (WSS) for various values of K (an Elbow Plot), I decided that K = 8 provided a good balance between cluster separation and simplicity.
+:::
+
+```{r slide6, include=TRUE}
+Kmeans_elbow
+```
+
+## K-Means on 2D PC1,PC2
+
+::: notes
+K = 8 Hard to see all clusters in 2d
+:::
+
+```{r slide 7,include=TRUE}
+plots[["8"]]
+```
+
+## 3D Clusters PC 1,2,3--K(8)
+
+![3D PCA Cluster Plot (PC1, PC2, PC3)](insta3dpc123.png)
+
+::: notes
+Cluster 8 is difficult to distinguish in this view and may become more visible in an alternative configuration of principal component dimensions.
+:::
+
+## 3D Clusters PC 1,2,4--K(8)
+
+![3D PCA Cluster Plot (PC1, PC2, PC4)](insta3dpc124.png)
+
+::: notes
+In this configuration, **Cluster 8 is now clearly identifiable**, as it shows **high positive values along PC4**, distinguishing it from the other groups.
+:::
+
+## 3D Clusters PC 1,3,4
+
+![3D PCA Cluster Plot (PC1, PC3, PC4)](insta3dpc134.png)
+
+## Insights
+
+```{r wordcloudslide, include=TRUE}
+Wordcloudfc4
+```
+
+::: notes
+To highlight the aisles that define each customer cluster, I added the cluster assignments to the `user_features` dataset and extracted the most relevant aisle features for each group. These were then visualized using word cloud plots, where the size of each aisle name reflects its importance within the cluster. This approach allows Instacart to generate more informed and interpretable labels based on users’ shopping preferences.
+:::
+
+## 
+
+```{r, include=TRUE }
+Wordcloudfc8
+```
+
+## Takeaways 
+
+::: small
+-   I condensed the variables into four principal components (PCs), using a scree plot to determine the number of components that captured the most variance in the data.
+-   Within the PCs, I extracted meaningful loadings to understand the contribution of the original features.
+-   I plotted the 3D PCA-transformed data to better differentiate between clusters.
+-   To segment the users, I applied K-Means clustering and used a WSS (within-cluster sum of squares) elbow plot to identify the optimal number of clusters (K).
+-   I calculated the average aisle proportions within each cluster to gain insight into customer behavior.
+:::
+
+## Improvements / Further work
+
+::: small
+-   This analysis could be improved by incorporating purchase frequency or purchasing power to add an economic layer to the segmentation.
+
+-   Another potential improvement is to group aisles by department, which would simplify and clarify the resulting customer segments.
+
+-   I also attempted to implement DBSCAN, though I’m not confident I executed it correctly — this is an area I'd like to explore further.
+
+-   Finally, assigning more meaningful labels to the clusters would enhance interpretability. For example, Cluster 8 might represent “Adult Party Shoppers,” while Cluster 3 could reflect “Home Cleaners and Organizers.”
+:::
+
+## Thank you
+
+[Github](https://github.com/DW8888/data608)
